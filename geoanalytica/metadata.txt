@@ -1,0 +1,32 @@
+[general]
+name=GeoAnalytica
+qgisMinimumVersion=3.22
+qgisMaximumVersion=3.99
+description=Comprehensive geospatial analysis suite: spatial analysis, raster, satellite & hyperspectral processing, map tools and more.
+version=1.0.0
+author=GeoAnalytica Team
+email=geoanalytica@example.com
+about=GeoAnalytica is a powerful all-in-one QGIS plugin for:
+    - Layer Management (load, filter, style, group layers)
+    - Spatial Analysis (buffer, intersect, union, clip, dissolve, voronoi)
+    - Raster Processing (DEM analysis, slope, aspect, hillshade, contours)
+    - Satellite & Hyperspectral Imagery (NDVI, band math, spectral profiles, false color)
+    - Data Import/Export (CSV, GeoJSON, Shapefile, GeoPackage, KML)
+    - Custom Map Tools (measure area/distance, annotate, draw geometries)
+    - Batch Processing workflows via Processing Provider
+
+tracker=https://github.com/your-org/geoanalytica/issues
+repository=https://github.com/your-org/geoanalytica
+homepage=https://github.com/your-org/geoanalytica
+
+changelog=
+    1.0.0 - Initial release with full analysis suite
+
+tags=analysis,raster,vector,hyperspectral,satellite,remote sensing,spatial analysis,NDVI,band math,batch processing,map tools,DEM
+
+category=Analysis
+icon=resources/icon.png
+experimental=False
+deprecated=False
+server=False
+hasProcessingProvider=True

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="30" fill="#1565c0"/>
+  <!-- Globe lines -->
+  <circle cx="32" cy="32" r="22" fill="none" stroke="#90caf9" stroke-width="2" opacity="0.6"/>
+  <ellipse cx="32" cy="32" rx="12" ry="22" fill="none" stroke="#90caf9" stroke-width="1.5" opacity="0.5"/>
+  <line x1="10" y1="32" x2="54" y2="32" stroke="#90caf9" stroke-width="1.5" opacity="0.5"/>
+  <line x1="14" y1="20" x2="50" y2="20" stroke="#90caf9" stroke-width="1" opacity="0.4"/>
+  <line x1="14" y1="44" x2="50" y2="44" stroke="#90caf9" stroke-width="1" opacity="0.4"/>
+  <!-- Satellite signal arcs -->
+  <path d="M40,14 Q52,26 40,40" fill="none" stroke="#f48fb1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M44,10 Q60,24 44,44" fill="none" stroke="#f48fb1" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+  <!-- Analysis cross -->
+  <line x1="22" y1="32" x2="42" y2="32" stroke="#a5d6a7" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="32" y1="22" x2="32" y2="42" stroke="#a5d6a7" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Center dot -->
+  <circle cx="32" cy="32" r="3" fill="#ffffff"/>
+</svg>
