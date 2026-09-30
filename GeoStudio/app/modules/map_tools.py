@@ -23,22 +23,9 @@ from qgis.gui import (
     QgsRubberBand, QgsMapTool
 )
 import processing
+from core.style import MODULE_STYLE
 
-
-STYLE = """
-    QGroupBox { font-weight: bold; color: #f48fb1; border: 1px solid #37474f; border-radius: 4px; margin-top: 8px; padding-top: 8px; }
-    QGroupBox::title { subcontrol-origin: margin; left: 8px; top: -6px; }
-    QPushButton { background: #880e4f; color: white; border: none; border-radius: 4px; padding: 6px 12px; }
-    QPushButton:hover { background: #ad1457; }
-    QPushButton:pressed { background: #560027; }
-    QPushButton:checked { background: #c2185b; border: 2px solid #f48fb1; }
-    QComboBox, QSpinBox, QDoubleSpinBox { background: #263238; color: #cfd8dc; border: 1px solid #37474f; border-radius: 3px; padding: 3px; }
-    QLabel { color: #b0bec5; }
-    QWidget { background: #263238; }
-    QTextEdit { background: #1e272c; color: #e0e0e0; border: 1px solid #37474f; font-family: monospace; font-size: 10px; }
-    QLineEdit { background: #263238; color: #cfd8dc; border: 1px solid #37474f; border-radius: 3px; padding: 3px; }
-    QCheckBox, QRadioButton { color: #b0bec5; }
-"""
+STYLE = MODULE_STYLE
 
 
 class CoordClickTool(QgsMapToolEmitPoint):
@@ -115,7 +102,7 @@ class MapToolsWidget(QWidget):
         btn_clear_measure.clicked.connect(self._clear_measure)
 
         self.measure_result = QLabel("Result: --")
-        self.measure_result.setStyleSheet("color: #a5d6a7; font-weight: bold;")
+        self.measure_result.setStyleSheet("color: #16a34a; font-weight: bold; font-size: 11px;")
 
         measure_layout.addWidget(btn_start_measure)
         measure_layout.addWidget(btn_clear_measure)
@@ -128,8 +115,10 @@ class MapToolsWidget(QWidget):
         zoom_layout = QVBoxLayout()
         btn_row1 = QHBoxLayout()
         btn_zoom_full = QPushButton("🌍 Zoom Full Extent")
+        btn_zoom_full.setObjectName("grayBtn")
         btn_zoom_full.clicked.connect(lambda: self.canvas.zoomToFullExtent())
         btn_zoom_sel = QPushButton("🔍 Zoom to Selection")
+        btn_zoom_sel.setObjectName("grayBtn")
         btn_zoom_sel.clicked.connect(self.zoom_to_selection)
         btn_row1.addWidget(btn_zoom_full)
         btn_row1.addWidget(btn_zoom_sel)
@@ -144,6 +133,7 @@ class MapToolsWidget(QWidget):
         coord_form.addRow("Y / Lat:", self.goto_lat)
         coord_form.addRow("Scale 1:", self.goto_scale)
         btn_goto = QPushButton("➡ Go to Coordinates")
+        btn_goto.setObjectName("blueBtn")
         btn_goto.clicked.connect(self._go_to_coordinates)
         coord_form.addRow(btn_goto)
         zoom_layout.addLayout(coord_form)
@@ -170,7 +160,7 @@ class MapToolsWidget(QWidget):
         scale_box = QGroupBox("Map Scale")
         scale_layout = QHBoxLayout()
         self.scale_label = QLabel(f"1 : {int(self.canvas.scale()):,}")
-        self.scale_label.setStyleSheet("color: #90caf9; font-weight: bold;")
+        self.scale_label.setStyleSheet("color: #1e40af; font-weight: bold; font-size: 11px;")
         btn_refresh_scale = QPushButton("🔄 Refresh")
         btn_refresh_scale.clicked.connect(self._update_scale)
         self.canvas.scaleChanged.connect(self._update_scale)

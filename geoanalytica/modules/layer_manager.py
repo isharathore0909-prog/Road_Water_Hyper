@@ -26,9 +26,9 @@ STYLE = """
     QGroupBox {
         font-weight: bold; color: #90caf9;
         border: 1px solid #37474f; border-radius: 4px;
-        margin-top: 8px; padding-top: 8px;
+        margin-top: 16px; padding-top: 6px;
     }
-    QGroupBox::title { subcontrol-origin: margin; left: 8px; top: -6px; }
+    QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 8px; padding: 0 4px; }
     QPushButton {
         background: #1565c0; color: white; border: none;
         border-radius: 4px; padding: 5px 10px; font-size: 11px;

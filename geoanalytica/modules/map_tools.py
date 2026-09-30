@@ -26,8 +26,8 @@ import processing
 
 
 STYLE = """
-    QGroupBox { font-weight: bold; color: #f48fb1; border: 1px solid #37474f; border-radius: 4px; margin-top: 8px; padding-top: 8px; }
-    QGroupBox::title { subcontrol-origin: margin; left: 8px; top: -6px; }
+    QGroupBox { font-weight: bold; color: #f48fb1; border: 1px solid #37474f; border-radius: 4px; margin-top: 16px; padding-top: 6px; }
+    QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 8px; padding: 0 4px; }
     QPushButton { background: #880e4f; color: white; border: none; border-radius: 4px; padding: 6px 12px; }
     QPushButton:hover { background: #ad1457; }
     QPushButton:pressed { background: #560027; }

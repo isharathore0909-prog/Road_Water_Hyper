@@ -140,6 +140,19 @@ class GeoAnalytica:
         # --- Build main panel (dockable) ---
         self._create_dock_panel()
 
+        # --- Auto-optimize large rasters for instant zoom ---
+        try:
+            from core.raster_optimizer import get_raster_optimizer
+            from qgis.core import QgsProject, QgsRasterLayer
+            optimizer = get_raster_optimizer(self.iface)
+            def _on_layers_added(layers):
+                for l in layers:
+                    if isinstance(l, QgsRasterLayer):
+                        optimizer.check_and_optimize(l)
+            QgsProject.instance().layersAdded.connect(_on_layers_added)
+        except Exception:
+            pass
+
     def _create_dock_panel(self):
         """Create the main dockable GeoAnalytica panel."""
         self.main_panel = GeoAnalyticaPanel(self.iface, self)

@@ -16,22 +16,9 @@ from qgis.core import (
 )
 import processing
 import os
+from core.style import MODULE_STYLE
 
-
-STYLE = """
-    QGroupBox { font-weight: bold; color: #80cbc4; border: 1px solid #37474f; border-radius: 4px; margin-top: 8px; padding-top: 8px; }
-    QGroupBox::title { subcontrol-origin: margin; left: 8px; top: -6px; }
-    QPushButton { background: #00695c; color: white; border: none; border-radius: 4px; padding: 6px 12px; }
-    QPushButton:hover { background: #00796b; }
-    QPushButton:pressed { background: #004d40; }
-    QComboBox { background: #263238; color: #cfd8dc; border: 1px solid #37474f; border-radius: 3px; padding: 3px; }
-    QLabel { color: #b0bec5; }
-    QWidget { background: #263238; }
-    QProgressBar { border: 1px solid #37474f; border-radius: 3px; background: #1e272c; }
-    QProgressBar::chunk { background: #00695c; }
-    QLineEdit { background: #263238; color: #cfd8dc; border: 1px solid #37474f; border-radius: 3px; padding: 3px; }
-    QCheckBox { color: #b0bec5; }
-"""
+STYLE = MODULE_STYLE
 
 FORMAT_MAP = {
     "GeoPackage (.gpkg)":       ("GPKG",    "*.gpkg"),
@@ -66,8 +53,10 @@ class ImportExportWidget(QWidget):
 
         tabs = QTabWidget()
         tabs.setStyleSheet("""
-            QTabBar::tab { background: #1e272c; color: #90a4ae; padding: 5px 10px; }
-            QTabBar::tab:selected { background: #00695c; color: white; font-weight: bold; }
+            QTabWidget::pane { border: 1px solid #e2e8f0; background: #ffffff; border-radius: 4px; }
+            QTabBar::tab { background: #f8fafc; color: #64748b; padding: 5px 10px; font-size: 11px; font-weight: 500; border: 1px solid #e2e8f0; border-top-left-radius: 4px; border-top-right-radius: 4px; margin-right: 2px; }
+            QTabBar::tab:selected { background: #ffffff; color: #2563eb; font-weight: bold; border-bottom: 1px solid #ffffff; }
+            QTabBar::tab:hover:!selected { background: #f1f5f9; color: #1e293b; }
         """)
         tabs.addTab(self._build_import_tab(), "📥 Import")
         tabs.addTab(self._build_export_tab(), "📤 Export")

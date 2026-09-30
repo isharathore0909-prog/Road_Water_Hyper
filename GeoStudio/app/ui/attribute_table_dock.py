@@ -25,34 +25,37 @@ class AttributeTableDock(QDockWidget):
     def _build_ui(self):
         widget = QWidget()
         widget.setStyleSheet("""
-            QWidget { background: #1a2332; }
-            QTableWidget { background: #1e272c; color: #cfd8dc; gridline-color: #37474f;
-                           border: none; font-size: 11px; }
-            QTableWidget::item { padding: 2px 6px; }
-            QTableWidget::item:selected { background: #1565c0; color: white; }
-            QHeaderView::section { background: #263238; color: #90caf9; border: 1px solid #37474f;
-                                   padding: 4px; font-weight: bold; }
-            QPushButton { background: #263238; color: #90caf9; border: 1px solid #37474f;
-                          border-radius: 3px; padding: 4px 10px; font-size: 11px; }
-            QPushButton:hover { background: #37474f; }
-            QLineEdit { background: #263238; color: #cfd8dc; border: 1px solid #37474f;
-                        border-radius: 3px; padding: 3px; font-size: 11px; }
-            QLabel { color: #78909c; font-size: 11px; }
+            QWidget { background: #ffffff; color: #0f172a; font-family: "Segoe UI Variable Display", "Segoe UI", "Inter", sans-serif; }
+            QTableWidget { background: #ffffff; color: #0f172a; gridline-color: #e2e8f0;
+                           border: 1px solid #e2e8f0; font-size: 11px; border-radius: 5px; }
+            QTableWidget::item { padding: 4px 6px; }
+            QTableWidget::item:selected { background: #eff6ff; color: #1d4ed8; font-weight: 600; }
+            QHeaderView::section { background: #f8fafc; color: #475569; border: none;
+                                   border-bottom: 1px solid #cbd5e1; border-right: 1px solid #e2e8f0;
+                                   padding: 5px 8px; font-weight: 600; font-size: 11px; }
+            QPushButton { background: #ffffff; color: #334155; border: 1px solid #cbd5e1;
+                          border-radius: 5px; padding: 4px 10px; font-size: 11px; font-weight: 600; }
+            QPushButton:hover { background: #eff6ff; color: #1d4ed8; border-color: #93c5fd; }
+            QLineEdit { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1;
+                        border-radius: 5px; padding: 4px 8px; font-size: 11px; }
+            QLineEdit:focus { border: 1.5px solid #2563eb; }
+            QLabel { color: #475569; font-size: 11px; }
         """)
         layout = QVBoxLayout(widget)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
 
         # Toolbar row
         toolbar = QHBoxLayout()
         self.layer_label = QLabel("No layer selected")
-        self.layer_label.setStyleSheet("color: #90caf9; font-weight: bold;")
+        self.layer_label.setStyleSheet("color: #1e40af; font-weight: bold; font-size: 11px; padding: 2px 4px;")
         toolbar.addWidget(self.layer_label)
         toolbar.addStretch()
 
         self.filter_edit = QLineEdit()
         self.filter_edit.setPlaceholderText("🔍 Filter rows...")
-        self.filter_edit.setMaximumWidth(200)
+        self.filter_edit.setClearButtonEnabled(True)
+        self.filter_edit.setMaximumWidth(220)
         self.filter_edit.textChanged.connect(self._filter_rows)
         toolbar.addWidget(self.filter_edit)
 
@@ -60,11 +63,12 @@ class AttributeTableDock(QDockWidget):
         btn_refresh.clicked.connect(self._refresh_table)
         toolbar.addWidget(btn_refresh)
 
-        btn_export = QPushButton("📋 Copy")
+        btn_export = QPushButton("📋 Copy Table")
         btn_export.clicked.connect(self._copy_selection)
         toolbar.addWidget(btn_export)
 
         self.feature_count_label = QLabel("0 features")
+        self.feature_count_label.setStyleSheet("background: #eff6ff; color: #2563eb; font-weight: 700; font-size: 10px; border-radius: 4px; padding: 3px 8px; border: 1px solid #bfdbfe;")
         toolbar.addWidget(self.feature_count_label)
 
         layout.addLayout(toolbar)
@@ -76,7 +80,7 @@ class AttributeTableDock(QDockWidget):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.verticalHeader().setDefaultSectionSize(22)
-        self.table.setStyleSheet("alternate-background-color: #202b38;")
+        self.table.setStyleSheet("alternate-background-color: #f8fafc;")
         layout.addWidget(self.table)
 
         widget.setLayout(layout)

@@ -20,26 +20,9 @@ from qgis.core import (
 )
 from qgis.analysis import QgsRasterCalculator, QgsRasterCalculatorEntry
 import processing
+from core.style import MODULE_STYLE
 
-
-
-STYLE = """
-    QGroupBox { font-weight: bold; color: #ce93d8; border: 1px solid #37474f; border-radius: 4px; margin-top: 8px; padding-top: 8px; }
-    QGroupBox::title { subcontrol-origin: margin; left: 8px; top: -6px; }
-    QPushButton { background: #6a1b9a; color: white; border: none; border-radius: 4px; padding: 6px 12px; }
-    QPushButton:hover { background: #7b1fa2; }
-    QPushButton:pressed { background: #4a148c; }
-    QComboBox, QSpinBox, QDoubleSpinBox { background: #263238; color: #cfd8dc; border: 1px solid #37474f; border-radius: 3px; padding: 3px; }
-    QLabel { color: #b0bec5; }
-    QWidget { background: #263238; }
-    QProgressBar { border: 1px solid #37474f; border-radius: 3px; background: #1e272c; }
-    QProgressBar::chunk { background: #6a1b9a; }
-    QTextEdit { background: #1e272c; color: #e0e0e0; border: 1px solid #37474f; font-family: monospace; font-size: 10px; }
-    QListWidget { background: #1e272c; color: #cfd8dc; border: 1px solid #37474f; }
-    QListWidget::item:selected { background: #6a1b9a; }
-    QLineEdit { background: #263238; color: #cfd8dc; border: 1px solid #37474f; border-radius: 3px; padding: 3px; }
-    QCheckBox { color: #b0bec5; }
-"""
+STYLE = MODULE_STYLE
 
 
 class SatelliteHyperspectralWidget(QWidget):
@@ -70,8 +53,10 @@ class SatelliteHyperspectralWidget(QWidget):
         # Inner tabs
         inner_tabs = QTabWidget()
         inner_tabs.setStyleSheet("""
-            QTabBar::tab { background: #1e272c; color: #90a4ae; padding: 4px 8px; font-size: 10px; }
-            QTabBar::tab:selected { background: #6a1b9a; color: white; font-weight: bold; }
+            QTabWidget::pane { border: 1px solid #e2e8f0; background: #ffffff; border-radius: 4px; }
+            QTabBar::tab { background: #f8fafc; color: #64748b; padding: 5px 8px; font-size: 10px; font-weight: 500; border: 1px solid #e2e8f0; border-top-left-radius: 4px; border-top-right-radius: 4px; margin-right: 2px; }
+            QTabBar::tab:selected { background: #ffffff; color: #2563eb; font-weight: bold; border-bottom: 1px solid #ffffff; }
+            QTabBar::tab:hover:!selected { background: #f1f5f9; color: #1e293b; }
         """)
 
         inner_tabs.addTab(self._build_indices_tab(),   "📊 Indices")
@@ -132,10 +117,11 @@ class SatelliteHyperspectralWidget(QWidget):
         for label, formula, func in indices:
             row = QHBoxLayout()
             btn = QPushButton(label)
+            btn.setObjectName("toolBtn")
             btn.setToolTip(formula)
             btn.clicked.connect(func)
             fl = QLabel(formula)
-            fl.setStyleSheet("color: #78909c; font-size: 9px;")
+            fl.setStyleSheet("color: #64748b; font-size: 10px; font-style: italic;")
             fl.setWordWrap(True)
             row.addWidget(btn, 1)
             row.addWidget(fl, 2)
@@ -163,7 +149,7 @@ class SatelliteHyperspectralWidget(QWidget):
             "Example:  \"layer@1\" / \"layer@2\"  or  (\"dem@1\" - \"dem@1\") / 2"
         )
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #78909c; font-size: 10px;")
+        hint.setStyleSheet("color: #475569; font-size: 11px; padding: 6px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px;")
         layout.addWidget(hint)
 
         form = QFormLayout()

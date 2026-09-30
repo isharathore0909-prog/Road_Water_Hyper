@@ -1,86 +1,333 @@
 # -*- coding: utf-8 -*-
-"""GeoStudio - Processing/Analysis Dock (right panel)."""
+"""
+GeoStudio - Pure QGIS Processing Toolbox Dock Widget
+Single hierarchical collapsible tree panel without horizontal tab strips.
+"""
+
+from typing import Dict, Any, Optional
 
 from PyQt5.QtWidgets import (
-    QDockWidget, QWidget, QVBoxLayout, QTabWidget, QLabel
+    QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QLineEdit, QTreeWidget, QTreeWidgetItem, QPushButton, QToolButton,
+    QHeaderView, QMessageBox
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QFont, QIcon, QColor
 
-# Use absolute imports (app/ is on sys.path via main.py)
-from modules.spatial_analysis import SpatialAnalysisWidget
-from modules.raster_processing import RasterProcessingWidget
-from modules.satellite_module import SatelliteHyperspectralWidget
-from modules.import_export import ImportExportWidget
-from modules.map_tools import MapToolsWidget
+from core.processing.algorithm_registry import AlgorithmRegistry, AlgorithmDefinition
+from .algorithm_dialog import QgisAlgorithmDialog
+from core.style import MODULE_STYLE
+
+
+class ProcessingToolboxTree(QWidget):
+    """
+    QGIS-Style Hierarchical Processing Tree Widget:
+    - Real-time search filter
+    - Hierarchical collapsible categories and subcategories
+    - Recently used algorithms pinned at top
+    - Double-click launches dedicated QGIS Algorithm Dialog
+    """
+
+    def __init__(self, map_canvas=None, main_window=None, parent=None):
+        super().__init__(parent)
+        self.map_canvas = map_canvas
+        self.main_window = main_window
+        self._recently_used = []
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
+
+        # ── Search & Filter Toolbar ───────────────────────────
+        search_box = QHBoxLayout()
+        search_box.setSpacing(4)
+
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("🔎 Search algorithms...")
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.setStyleSheet("""
+            QLineEdit {
+                background: #ffffff;
+                color: #0f172a;
+                border: 1px solid #cbd5e1;
+                border-radius: 4px;
+                padding: 5px 8px;
+                font-size: 11px;
+            }
+            QLineEdit:focus {
+                border-color: #2563eb;
+            }
+        """)
+        self.search_edit.textChanged.connect(self._filter_tree)
+        search_box.addWidget(self.search_edit)
+
+        btn_expand = QToolButton()
+        btn_expand.setText("➕")
+        btn_expand.setToolTip("Expand All Categories")
+        btn_expand.setStyleSheet("QToolButton { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px; } QToolButton:hover { background: #e2e8f0; }")
+        btn_expand.clicked.connect(self.expand_all)
+        search_box.addWidget(btn_expand)
+
+        btn_collapse = QToolButton()
+        btn_collapse.setText("➖")
+        btn_collapse.setToolTip("Collapse All Categories")
+        btn_collapse.setStyleSheet("QToolButton { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px; } QToolButton:hover { background: #e2e8f0; }")
+        btn_collapse.clicked.connect(self.collapse_all)
+        search_box.addWidget(btn_collapse)
+
+        layout.addLayout(search_box)
+
+        # ── QGIS Hierarchical Algorithm Tree ──────────────────
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)
+        self.tree.setAnimated(True)
+        self.tree.setIndentation(16)
+        self.tree.setStyleSheet("""
+            QTreeWidget {
+                background: #ffffff;
+                color: #1e293b;
+                border: 1px solid #e2e8f0;
+                border-radius: 4px;
+                font-size: 11px;
+            }
+            QTreeWidget::item {
+                padding: 4px 6px;
+                border-radius: 3px;
+            }
+            QTreeWidget::item:selected {
+                background: #dbeafe;
+                color: #1e40af;
+                font-weight: 500;
+            }
+            QTreeWidget::item:hover:!selected {
+                background: #f8fafc;
+            }
+            QToolTip {
+                background-color: #ffffff;
+                color: #0f172a;
+                border: 1px solid #cbd5e1;
+                border-radius: 4px;
+                padding: 6px 10px;
+                font-size: 11px;
+                font-family: "Segoe UI", "Inter", "Arial", sans-serif;
+            }
+        """)
+        self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
+        layout.addWidget(self.tree)
+
+        # Bottom algorithm count
+        all_algos = AlgorithmRegistry.get_all_algorithms()
+        self.count_label = QLabel(f"Total: {len(all_algos)} algorithms available")
+        self.count_label.setStyleSheet("color: #64748b; font-size: 10px; padding: 2px;")
+        layout.addWidget(self.count_label)
+
+        self._populate_tree()
+
+    def _populate_tree(self):
+        self.tree.clear()
+
+        # Recently used group at top
+        self.recent_group = QTreeWidgetItem(self.tree)
+        self.recent_group.setText(0, "🕒 Recently Used")
+        self.recent_group.setFont(0, QFont("Segoe UI", 9, QFont.Bold))
+        self.recent_group.setForeground(0, QColor("#1e40af"))
+        self.recent_group.setHidden(len(self._recently_used) == 0)
+
+        # Build full multi-level hierarchy
+        for cat in AlgorithmRegistry.HIERARCHY:
+            cat_item = QTreeWidgetItem(self.tree)
+            total_cat_items = sum(len(sub["items"]) for sub in cat["subcategories"])
+            cat_item.setText(0, f"{cat['category']} ({total_cat_items})")
+            cat_item.setFont(0, QFont("Segoe UI", 9, QFont.Bold))
+            cat_item.setForeground(0, QColor("#1e40af"))
+
+            for sub in cat["subcategories"]:
+                sub_item = QTreeWidgetItem(cat_item)
+                sub_item.setText(0, f"📁 {sub['name']} ({len(sub['items'])})")
+                sub_item.setFont(0, QFont("Segoe UI", 9, QFont.Medium))
+                sub_item.setForeground(0, QColor("#334155"))
+
+                for algo in sub["items"]:
+                    item = QTreeWidgetItem(sub_item)
+                    gpu_badge = "⚡ " if algo.supports_gpu else ""
+                    item.setText(0, f"⚙  {algo.name} {gpu_badge}")
+                    item.setToolTip(0, f"{algo.name}\n\n{algo.description}\nAlgorithm ID: {algo.algo_id}\nHardware: {'CUDA GPU Acceleration Supported' if algo.supports_gpu else 'CPU'}")
+                    item.setData(0, Qt.UserRole, algo)
+
+        self.tree.collapseAll()
+        # Expand first category (Vector) by default
+        if self.tree.topLevelItemCount() > 1:
+            self.tree.topLevelItem(1).setExpanded(True)
+
+    def _filter_tree(self, text: str):
+        query = text.strip().lower()
+        total_visible = 0
+
+        if not query:
+            for i in range(self.tree.topLevelItemCount()):
+                cat = self.tree.topLevelItem(i)
+                if cat == self.recent_group:
+                    cat.setHidden(len(self._recently_used) == 0)
+                else:
+                    cat.setHidden(False)
+                for j in range(cat.childCount()):
+                    sub = cat.child(j)
+                    sub.setHidden(False)
+                    for k in range(sub.childCount()):
+                        sub.child(k).setHidden(False)
+            all_algos = AlgorithmRegistry.get_all_algorithms()
+            self.count_label.setText(f"Total: {len(all_algos)} algorithms available")
+            return
+
+        for i in range(self.tree.topLevelItemCount()):
+            cat = self.tree.topLevelItem(i)
+            cat_has_match = False
+
+            for j in range(cat.childCount()):
+                sub = cat.child(j)
+                sub_has_match = False
+
+                for k in range(sub.childCount()):
+                    child = sub.child(k)
+                    algo_data = child.data(0, Qt.UserRole)
+                    if isinstance(algo_data, AlgorithmDefinition):
+                        name_m = query in algo_data.name.lower()
+                        desc_m = query in algo_data.description.lower()
+                        id_m = query in algo_data.algo_id.lower()
+                        matches = name_m or desc_m or id_m
+                    else:
+                        matches = query in child.text(0).lower()
+
+                    child.setHidden(not matches)
+                    if matches:
+                        sub_has_match = True
+                        cat_has_match = True
+                        total_visible += 1
+
+                sub.setHidden(not sub_has_match)
+                if sub_has_match:
+                    sub.setExpanded(True)
+
+            cat.setHidden(not cat_has_match)
+            if cat_has_match:
+                cat.setExpanded(True)
+
+        self.count_label.setText(f"Found: {total_visible} algorithms matching '{text}'")
+
+    def expand_all(self):
+        self.tree.expandAll()
+
+    def collapse_all(self):
+        self.tree.collapseAll()
+
+    def _on_item_double_clicked(self, item, column):
+        algo = item.data(0, Qt.UserRole)
+        if not algo or not isinstance(algo, AlgorithmDefinition):
+            item.setExpanded(not item.isExpanded())
+            return
+
+        self._add_to_recent(algo)
+        self.launch_algorithm_dialog(algo)
+
+    def _add_to_recent(self, algo: AlgorithmDefinition):
+        self._recently_used = [r for r in self._recently_used if r.algo_id != algo.algo_id]
+        self._recently_used.insert(0, algo)
+        if len(self._recently_used) > 6:
+            self._recently_used.pop()
+
+        self.recent_group.takeChildren()
+        self.recent_group.setHidden(False)
+        self.recent_group.setText(0, f"🕒 Recently Used ({len(self._recently_used)})")
+
+        for r_algo in self._recently_used:
+            item = QTreeWidgetItem(self.recent_group)
+            gpu_badge = "⚡ " if r_algo.supports_gpu else ""
+            item.setText(0, f"⚙  {r_algo.name} {gpu_badge}")
+            item.setToolTip(0, f"{r_algo.name}\n\n{r_algo.description}\nAlgorithm ID: {r_algo.algo_id}")
+            item.setData(0, Qt.UserRole, r_algo)
+
+        self.recent_group.setExpanded(True)
+
+    def launch_algorithm_dialog(self, algo: AlgorithmDefinition):
+        """Open universal QGIS algorithm parameter dialog."""
+        # Handle special direct tools (Measure, Attribute Table, Map Grid)
+        if algo.dialog_type == "open_attribute_table":
+            if self.main_window:
+                self.main_window.open_attribute_table()
+            return
+        elif algo.dialog_type == "dem_dialog":
+            if self.main_window:
+                self.main_window.open_dem_elevation_dialog()
+            return
+        elif algo.dialog_type in ("io_import_vector", "io_import_raster", "io_import_csv"):
+            if self.main_window:
+                if algo.dialog_type == "io_import_vector": self.main_window.add_vector()
+                elif algo.dialog_type == "io_import_raster": self.main_window.add_raster()
+                elif algo.dialog_type == "io_import_csv": self.main_window.add_csv()
+            return
+        elif algo.dialog_type == "tools_measure":
+            QMessageBox.information(self, "Measure Tool", "Click points on the Map Canvas to measure distance and polygon area.")
+            return
+        elif algo.dialog_type == "tools_coord":
+            QMessageBox.information(self, "Coordinate Capture", "Click anywhere on the map canvas to view coordinates and CRS info.")
+            return
+
+        # Open Universal QGIS Algorithm Dialog
+        dlg = QgisAlgorithmDialog(algo, map_canvas=self.map_canvas, parent=self)
+        dlg.exec_()
 
 
 class ProcessingDock(QDockWidget):
-    """Right-side dockable processing & analysis panel with tabs."""
-
-    TAB_MAP = {
-        "spatial":   0,
-        "raster":    1,
-        "satellite": 2,
-        "io":        3,
-        "tools":     4,
-    }
+    """
+    QGIS Processing Toolbox Dock Panel:
+    - Pure hierarchical tree without horizontal tab strips
+    - Real-time search filter
+    - Bounded-RAM streaming and CUDA GPU execution
+    """
 
     def __init__(self, map_canvas, parent=None):
-        super().__init__("🔬 Processing & Analysis", parent)
+        super().__init__("⚙ Processing Toolbox", parent)
         self.setObjectName("processing_dock")
-        self.setMinimumWidth(300)
+        self.setMinimumWidth(320)
         self.setMaximumWidth(480)
         self.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
 
         self.map_canvas = map_canvas
-        self._build_ui()
+        self.main_window = parent
 
-    def _build_ui(self):
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(2, 2, 2, 2)
+        self.tree_widget = ProcessingToolboxTree(
+            map_canvas=self.map_canvas,
+            main_window=self.main_window,
+            parent=self
+        )
+        self.setWidget(self.tree_widget)
 
-        self.tabs = QTabWidget()
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane { border: none; background: #1e272c; }
-            QTabBar::tab { background: #1a2332; color: #78909c; padding: 6px 10px; font-size: 11px; }
-            QTabBar::tab:selected { background: #0d47a1; color: #e3f2fd; font-weight: bold; }
-            QTabBar::tab:hover { background: #263238; color: #cfd8dc; }
-        """)
-
-        # Build a fake iface wrapper for the modules
-        class FakeIface:
-            def __init__(self, canvas_widget):
-                self._canvas = canvas_widget
-            def mapCanvas(self): return self._canvas.canvas
-            def messageBar(self):
-                class FakeBar:
-                    def pushMessage(self, *a, **kw): pass
-                    def pushSuccess(self, tag, msg): print(f"[OK] {tag}: {msg}")
-                    def pushWarning(self, tag, msg): print(f"[WARN] {tag}: {msg}")
-                    def pushInfo(self, tag, msg):    print(f"[INFO] {tag}: {msg}")
-                return FakeBar()
-            def activeLayer(self): return None
-            def setActiveLayer(self, l): pass
-
-        self.iface = FakeIface(self.map_canvas)
-
-        self.spatial_widget   = SpatialAnalysisWidget(self.iface)
-        self.raster_widget    = RasterProcessingWidget(self.iface)
-        self.satellite_widget = SatelliteHyperspectralWidget(self.iface)
-        self.io_widget        = ImportExportWidget(self.iface)
-        self.tools_widget     = MapToolsWidget(self.iface)
-
-        self.tabs.addTab(self.spatial_widget,   "📐 Spatial")
-        self.tabs.addTab(self.raster_widget,    "🏔 Raster")
-        self.tabs.addTab(self.satellite_widget, "🛰 Satellite")
-        self.tabs.addTab(self.io_widget,        "📦 I/O")
-        self.tabs.addTab(self.tools_widget,     "🗺 Tools")
-
-        layout.addWidget(self.tabs)
-        widget.setLayout(layout)
-        self.setWidget(widget)
+    def open_algorithm(self, algo_id_or_name: str):
+        """Programmatically open an algorithm dialog by name or algorithm ID."""
+        self.show()
+        algo = AlgorithmRegistry.find_algorithm(algo_id_or_name)
+        if algo:
+            self.tree_widget.launch_algorithm_dialog(algo)
+        else:
+            # Try fuzzy match by name
+            for a in AlgorithmRegistry.get_all_algorithms():
+                if algo_id_or_name.lower() in a.name.lower():
+                    self.tree_widget.launch_algorithm_dialog(a)
+                    return
+            QMessageBox.warning(self, "Algorithm Not Found", f"Could not find algorithm '{algo_id_or_name}'.")
 
     def open_tab(self, tab_name: str):
-        idx = self.TAB_MAP.get(tab_name, 0)
-        self.tabs.setCurrentIndex(idx)
+        """Backward compatibility for menu actions."""
+        self.show()
+        if tab_name == "spatial":
+            self.open_algorithm("native:buffer")
+        elif tab_name == "raster":
+            self.open_algorithm("native:slope")
+        elif tab_name == "satellite":
+            self.open_algorithm("satellite:ndvi")
+        elif tab_name == "io":
+            self.open_algorithm("native:import_vector")
+        elif tab_name == "tools":
+            self.open_algorithm("native:measure_dist")

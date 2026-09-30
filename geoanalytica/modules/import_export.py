@@ -19,8 +19,8 @@ import os
 
 
 STYLE = """
-    QGroupBox { font-weight: bold; color: #80cbc4; border: 1px solid #37474f; border-radius: 4px; margin-top: 8px; padding-top: 8px; }
-    QGroupBox::title { subcontrol-origin: margin; left: 8px; top: -6px; }
+    QGroupBox { font-weight: bold; color: #80cbc4; border: 1px solid #37474f; border-radius: 4px; margin-top: 16px; padding-top: 6px; }
+    QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 8px; padding: 0 4px; }
     QPushButton { background: #00695c; color: white; border: none; border-radius: 4px; padding: 6px 12px; }
     QPushButton:hover { background: #00796b; }
     QPushButton:pressed { background: #004d40; }

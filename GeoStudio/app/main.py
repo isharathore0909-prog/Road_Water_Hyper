@@ -38,19 +38,31 @@ for p in [
     if p not in sys.path:
         sys.path.insert(0, p)
 
-# Set QGIS prefix path
+# Set QGIS prefix path & environment variables
 os.environ["QGIS_PREFIX_PATH"]  = QGIS_APP
 os.environ["GDAL_DATA"]         = os.path.join(QGIS_ROOT, "share", "gdal")
 os.environ["PROJ_LIB"]          = os.path.join(QGIS_ROOT, "share", "proj")
 os.environ["QT_PLUGIN_PATH"]    = os.path.join(QGIS_ROOT, "apps", "Qt5", "plugins")
 
-
-# ── Qt Application ────────────────────────────────────────────────────────────
-from PyQt5.QtWidgets import QApplication, QSplashScreen
+# ── Qt & QGIS Application (Single Unified Instance) ───────────────────────────
+from PyQt5.QtWidgets import QSplashScreen
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QPixmap, QColor, QPainter, QFont
+from PyQt5.QtGui import QPixmap, QColor, QPainter, QFont, QLinearGradient, QBrush
+from qgis.core import QgsApplication
 
-app = QApplication(sys.argv)
+# High DPI Scaling for 2K/4K Displays
+try:
+    from PyQt5.QtCore import Qt
+    QgsApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QgsApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+except Exception:
+    pass
+
+# Create sole application object
+argv_bytes = [arg.encode('utf-8') if isinstance(arg, str) else arg for arg in sys.argv] if sys.argv else []
+app = QgsApplication(argv_bytes, True)
+app.setPrefixPath(QGIS_APP, True)
+app.initQgis()
 app.setApplicationName("GeoStudio")
 app.setOrganizationName("GeoStudio")
 app.setStyle("Fusion")
@@ -62,8 +74,6 @@ splash_pix.fill(QColor("#0d1b2a"))
 painter = QPainter(splash_pix)
 painter.setRenderHint(QPainter.Antialiasing)
 
-# Background gradient rectangle
-from PyQt5.QtGui import QLinearGradient, QBrush
 gradient = QLinearGradient(0, 0, 480, 280)
 gradient.setColorAt(0.0, QColor("#0d1b2a"))
 gradient.setColorAt(1.0, QColor("#1a3a5c"))
@@ -91,53 +101,48 @@ painter.drawText(44, 200, "Version 1.0  ·  Powered by QGIS Engine 3.40  ·  PyQ
 painter.setPen(Qt.NoPen)
 painter.setBrush(QColor("#1e3a5f"))
 painter.drawRoundedRect(40, 230, 400, 12, 6, 6)
-
 painter.setBrush(QColor("#4fc3f7"))
 painter.drawRoundedRect(40, 230, 200, 12, 6, 6)
-
 painter.end()
 
 splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
 splash.show()
-splash.showMessage("  Initializing QGIS engine...", Qt.AlignBottom | Qt.AlignLeft, QColor("#4fc3f7"))
+splash.showMessage("  Initializing geospatial engine...", Qt.AlignBottom | Qt.AlignLeft, QColor("#4fc3f7"))
 app.processEvents()
 
-# ── Initialize QGIS ──────────────────────────────────────────────────────────
+# ── Initialize Processing ───────────────────────────────────────────────────
 try:
-    from qgis.core import QgsApplication
-    qgs = QgsApplication([], True)
-    qgs.setPrefixPath(QGIS_APP, True)
-    qgs.initQgis()
-    splash.showMessage("  Loading processing algorithms...", Qt.AlignBottom | Qt.AlignLeft, QColor("#4fc3f7"))
-    app.processEvents()
-
     import processing
     from processing.core.Processing import Processing
     Processing.initialize()
     splash.showMessage("  Building interface...", Qt.AlignBottom | Qt.AlignLeft, QColor("#a5d6a7"))
     app.processEvents()
-except ImportError as e:
-    splash.showMessage(f"  Warning: {e}", Qt.AlignBottom | Qt.AlignLeft, QColor("#ff8a65"))
-    app.processEvents()
-    qgs = None
+except Exception as e:
+    print(f"[Warning] Processing initialize: {e}")
 
 # ── Launch Main Window ────────────────────────────────────────────────────────
-# Add app directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 from ui.main_window import GeoStudioMainWindow
 
-window = GeoStudioMainWindow(qgs_app=qgs)
+window = GeoStudioMainWindow(qgs_app=app)
 window.show()
 
 # Close splash after window shows
-QTimer.singleShot(1800, splash.close)
-QTimer.singleShot(1800, window.raise_)
+QTimer.singleShot(1400, splash.close)
+QTimer.singleShot(1400, window.raise_)
 
-# ── Run ───────────────────────────────────────────────────────────────────────
+# ── Run Event Loop ────────────────────────────────────────────────────────────
 exit_code = app.exec_()
 
-if qgs:
-    qgs.exitQgis()
+try:
+    if 'window' in locals():
+        window.close()
+        del window
+    if 'splash' in locals():
+        del splash
+    app.exitQgis()
+except Exception:
+    pass
 
-sys.exit(exit_code)
+sys.exit(0 if exit_code is None else exit_code)
+

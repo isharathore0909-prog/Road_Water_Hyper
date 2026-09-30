@@ -7,7 +7,7 @@ Buffer, Intersect, Union, Clip, Dissolve, Convex Hull, Voronoi, Centroid.
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QComboBox, QDoubleSpinBox, QGroupBox, QFileDialog,
-    QFormLayout, QMessageBox, QProgressBar, QCheckBox
+    QFormLayout, QMessageBox, QProgressBar, QCheckBox, QGridLayout
 )
 from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal
 from qgis.core import (
@@ -15,21 +15,9 @@ from qgis.core import (
     QgsCoordinateReferenceSystem
 )
 import processing
+from core.style import MODULE_STYLE
 
-
-STYLE = """
-    QGroupBox { font-weight: bold; color: #a5d6a7; border: 1px solid #37474f; border-radius: 4px; margin-top: 8px; padding-top: 8px; }
-    QGroupBox::title { subcontrol-origin: margin; left: 8px; top: -6px; }
-    QPushButton { background: #2e7d32; color: white; border: none; border-radius: 4px; padding: 6px 12px; }
-    QPushButton:hover { background: #388e3c; }
-    QPushButton:pressed { background: #1b5e20; }
-    QComboBox { background: #263238; color: #cfd8dc; border: 1px solid #37474f; border-radius: 3px; padding: 3px; }
-    QDoubleSpinBox { background: #263238; color: #cfd8dc; border: 1px solid #37474f; border-radius: 3px; padding: 3px; }
-    QLabel { color: #b0bec5; }
-    QWidget { background: #263238; }
-    QProgressBar { border: 1px solid #37474f; border-radius: 3px; background: #1e272c; }
-    QProgressBar::chunk { background: #2e7d32; }
-"""
+STYLE = MODULE_STYLE
 
 
 class SpatialAnalysisWidget(QWidget):
@@ -74,6 +62,7 @@ class SpatialAnalysisWidget(QWidget):
         buf_layout.addRow("Distance:", self.buf_dist)
         buf_layout.addRow("Segments:", self.buf_segs)
         buf_btn = QPushButton("▶ Run Buffer")
+        buf_btn.setObjectName("blueBtn")
         buf_btn.clicked.connect(self.run_buffer)
         buf_layout.addRow(buf_btn)
         buf_box.setLayout(buf_layout)
@@ -81,7 +70,8 @@ class SpatialAnalysisWidget(QWidget):
 
         # --- Geoprocessing Operations ---
         ops_box = QGroupBox("Geoprocessing Operations")
-        ops_layout = QVBoxLayout()
+        ops_grid = QGridLayout()
+        ops_grid.setSpacing(6)
         ops = [
             ("✂ Clip",         self.run_clip),
             ("∩ Intersect",    self.run_intersect),
@@ -94,9 +84,12 @@ class SpatialAnalysisWidget(QWidget):
         ]
         for i, (label, func) in enumerate(ops):
             btn = QPushButton(label)
+            btn.setObjectName("toolBtn")
             btn.clicked.connect(func)
-            ops_layout.addWidget(btn)
-        ops_box.setLayout(ops_layout)
+            row = i // 2
+            col = i % 2
+            ops_grid.addWidget(btn, row, col)
+        ops_box.setLayout(ops_grid)
         layout.addWidget(ops_box)
 
         # --- Progress ---
@@ -163,6 +156,11 @@ class SpatialAnalysisWidget(QWidget):
         except Exception as e:
             self.progress.setFormat("Error")
             QMessageBox.critical(self, "Processing Error", str(e))
+
+    def focus_buffer(self):
+        if hasattr(self, "buf_dist"):
+            self.buf_dist.setFocus()
+            self.buf_dist.selectAll()
 
     def run_buffer(self):
         layer = self._get_input_layer()

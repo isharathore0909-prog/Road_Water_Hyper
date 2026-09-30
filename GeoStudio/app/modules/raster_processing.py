@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-GeoAnalytica - Raster & DEM Processing Module
-Slope, Aspect, Hillshade, Contours, Reclassify, Focal Statistics.
+GeoStudio - Raster & DEM Processing Module
+Global Mapper & ArcGIS Style Elevation Rendering, Slope, Aspect, Hillshade, Contours, Reclassify, Focal Statistics.
 """
 
 from qgis.PyQt.QtWidgets import (
@@ -13,24 +13,14 @@ from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsProject, QgsMapLayer, QgsRasterLayer
 import processing
 
+from core.elevation_styler import ElevationStyler, ELEVATION_PRESETS
+from core.style import MODULE_STYLE
 
-STYLE = """
-    QGroupBox { font-weight: bold; color: #ffcc80; border: 1px solid #37474f; border-radius: 4px; margin-top: 8px; padding-top: 8px; }
-    QGroupBox::title { subcontrol-origin: margin; left: 8px; top: -6px; }
-    QPushButton { background: #e65100; color: white; border: none; border-radius: 4px; padding: 6px 12px; }
-    QPushButton:hover { background: #f4511e; }
-    QPushButton:pressed { background: #bf360c; }
-    QComboBox, QSpinBox, QDoubleSpinBox { background: #263238; color: #cfd8dc; border: 1px solid #37474f; border-radius: 3px; padding: 3px; }
-    QLabel { color: #b0bec5; }
-    QWidget { background: #263238; }
-    QProgressBar { border: 1px solid #37474f; border-radius: 3px; background: #1e272c; }
-    QProgressBar::chunk { background: #e65100; }
-    QCheckBox { color: #b0bec5; }
-"""
+STYLE = MODULE_STYLE
 
 
 class RasterProcessingWidget(QWidget):
-    """Raster & DEM Processing: slope, aspect, hillshade, contours, reclassify, focal stats."""
+    """Raster & DEM Processing: elevation styling, slope, aspect, hillshade, contours, reclassify, focal stats."""
 
     def __init__(self, iface, parent=None):
         super().__init__(parent)
@@ -47,7 +37,7 @@ class RasterProcessingWidget(QWidget):
         layout.setSpacing(6)
 
         # --- Input Raster ---
-        input_box = QGroupBox("Input Raster Layer")
+        input_box = QGroupBox("Input Raster / DEM Layer")
         input_form = QFormLayout()
         self.raster_combo = QComboBox()
         self.band_combo = QComboBox()
@@ -57,24 +47,60 @@ class RasterProcessingWidget(QWidget):
         input_box.setLayout(input_form)
         layout.addWidget(input_box)
 
+        # --- Elevation Symbology (Global Mapper / ArcGIS) ---
+        style_box = QGroupBox("🏔 Elevation Symbology (Global Mapper / ArcGIS)")
+        style_layout = QVBoxLayout()
+
+        btn_full_dialog = QPushButton("⛰ Open Elevation & 3D Dialog...")
+        btn_full_dialog.setObjectName("blueBtn")
+        btn_full_dialog.clicked.connect(self.open_elevation_dialog)
+        style_layout.addWidget(btn_full_dialog)
+
+        quick_row1 = QHBoxLayout()
+        btn_gm = QPushButton("🏔 GM Atlas")
+        btn_gm.setObjectName("grayBtn")
+        btn_gm.clicked.connect(lambda: self._apply_quick_preset("GLOBAL_MAPPER_ATLAS"))
+        
+        btn_arc = QPushButton("🌍 ArcGIS Earth")
+        btn_arc.setObjectName("grayBtn")
+        btn_arc.clicked.connect(lambda: self._apply_quick_preset("ARCGIS_ELEVATION"))
+        quick_row1.addWidget(btn_gm)
+        quick_row1.addWidget(btn_arc)
+        style_layout.addLayout(quick_row1)
+
+        quick_row2 = QHBoxLayout()
+        btn_hs = QPushButton("💡 3D Hillshade")
+        btn_hs.setObjectName("grayBtn")
+        btn_hs.clicked.connect(self._apply_quick_hillshade)
+
+        btn_gray = QPushButton("🌓 Auto Contrast")
+        btn_gray.setObjectName("grayBtn")
+        btn_gray.clicked.connect(self._apply_quick_gray)
+        quick_row2.addWidget(btn_hs)
+        quick_row2.addWidget(btn_gray)
+        style_layout.addLayout(quick_row2)
+
+        style_box.setLayout(style_layout)
+        layout.addWidget(style_box)
+
         # --- DEM Analysis ---
         dem_box = QGroupBox("DEM Terrain Analysis")
         dem_layout = QVBoxLayout()
 
         z_form = QFormLayout()
         self.z_factor = QDoubleSpinBox()
-        self.z_factor.setRange(0.001, 100.0)
+        self.z_factor.setRange(0.0001, 100.0)
         self.z_factor.setValue(1.0)
-        self.z_factor.setDecimals(3)
+        self.z_factor.setDecimals(4)
         z_form.addRow("Z Factor:", self.z_factor)
         dem_layout.addLayout(z_form)
 
         ops = [
-            ("🏔 Slope",      self.run_slope),
-            ("🧭 Aspect",     self.run_aspect),
-            ("💡 Hillshade",  self.run_hillshade),
-            ("📏 Roughness",  self.run_roughness),
-            ("🌊 TWI",        self.run_twi),
+            ("🏔 Slope Map",      self.run_slope),
+            ("🧭 Aspect Map",     self.run_aspect),
+            ("💡 Generate Hillshade Layer",  self.run_hillshade),
+            ("📏 Roughness",      self.run_roughness),
+            ("🌊 TWI",            self.run_twi),
         ]
         for label, func in ops:
             btn = QPushButton(label)
@@ -88,7 +114,7 @@ class RasterProcessingWidget(QWidget):
         contour_box = QGroupBox("Contour Lines")
         contour_form = QFormLayout()
         self.contour_interval = QDoubleSpinBox()
-        self.contour_interval.setRange(1, 1000)
+        self.contour_interval.setRange(0.1, 5000)
         self.contour_interval.setValue(50)
         self.contour_interval.setSuffix(" m")
         contour_form.addRow("Interval:", self.contour_interval)
@@ -98,14 +124,17 @@ class RasterProcessingWidget(QWidget):
         contour_box.setLayout(contour_form)
         layout.addWidget(contour_box)
 
-        # --- Raster Calculator ---
+        # --- Raster Calculator & Utilities ---
         calc_box = QGroupBox("Raster Utilities")
         calc_layout = QVBoxLayout()
         btn_stats = QPushButton("📊 Raster Statistics")
+        btn_stats.setObjectName("grayBtn")
         btn_stats.clicked.connect(self.show_raster_stats)
         btn_focal = QPushButton("🔵 Focal Mean (Smooth)")
+        btn_focal.setObjectName("grayBtn")
         btn_focal.clicked.connect(self.run_focal_mean)
         btn_reproject = QPushButton("🗺 Reproject Raster")
+        btn_reproject.setObjectName("grayBtn")
         btn_reproject.clicked.connect(self.run_reproject)
         calc_layout.addWidget(btn_stats)
         calc_layout.addWidget(btn_focal)
@@ -132,7 +161,9 @@ class RasterProcessingWidget(QWidget):
         self.raster_combo.clear()
         self.raster_combo.addItem("-- None --", None)
         for l in layers:
-            self.raster_combo.addItem(l.name(), l.id())
+            is_dem = ElevationStyler.is_dem_or_elevation(l)
+            prefix = "🏔 [DEM] " if is_dem else "🗺 "
+            self.raster_combo.addItem(f"{prefix}{l.name()}", l.id())
         idx = self.raster_combo.findText(current)
         if idx >= 0:
             self.raster_combo.setCurrentIndex(idx)
@@ -149,6 +180,52 @@ class RasterProcessingWidget(QWidget):
         if not layer_id:
             return None
         return QgsProject.instance().mapLayer(layer_id)
+
+    def open_elevation_dialog(self):
+        layer = self._get_raster()
+        try:
+            from ui.dem_elevation_dialog import DEMElevationDialog
+            dlg = DEMElevationDialog(
+                map_canvas=getattr(self.iface, "mapCanvas", None),
+                target_layer=layer,
+                parent=self
+            )
+            dlg.exec_()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not open DEM styling: {e}")
+
+    def _apply_quick_preset(self, preset_key):
+        layer = self._get_raster()
+        if not layer:
+            QMessageBox.warning(self, "No Raster", "Select a raster layer first."); return
+        ElevationStyler.apply_elevation_colormap(layer, preset_key=preset_key)
+        try:
+            if hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
+                self.iface.mapCanvas().refresh()
+        except Exception:
+            pass
+
+    def _apply_quick_hillshade(self):
+        layer = self._get_raster()
+        if not layer:
+            QMessageBox.warning(self, "No Raster", "Select a raster layer first."); return
+        ElevationStyler.apply_hillshade(layer, band=1, z_factor=self.z_factor.value(), multidirectional=True)
+        try:
+            if hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
+                self.iface.mapCanvas().refresh()
+        except Exception:
+            pass
+
+    def _apply_quick_gray(self):
+        layer = self._get_raster()
+        if not layer:
+            QMessageBox.warning(self, "No Raster", "Select a raster layer first."); return
+        ElevationStyler.apply_grayscale_contrast(layer, band=1, stretch_type="cumulative_cut")
+        try:
+            if hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
+                self.iface.mapCanvas().refresh()
+        except Exception:
+            pass
 
     def _run(self, algo, params, name):
         self.progress.setFormat(f"Running {name}...")
@@ -170,7 +247,8 @@ class RasterProcessingWidget(QWidget):
                     QgsProject.instance().addMapLayer(output)
             self.progress.setValue(100)
             self.progress.setFormat(f"✓ {name} done")
-            self.iface.messageBar().pushSuccess("GeoAnalytica", f"{name} completed!")
+            if hasattr(self.iface, "messageBar") and self.iface.messageBar():
+                self.iface.messageBar().pushSuccess("GeoStudio", f"{name} completed!")
         except Exception as e:
             self.progress.setFormat("Error")
             QMessageBox.critical(self, "Error", str(e))
@@ -198,7 +276,7 @@ class RasterProcessingWidget(QWidget):
         params = {"INPUT": layer, "BAND": 1, "Z_FACTOR": self.z_factor.value(),
                   "SCALE": 1.0, "AZIMUTH": 315, "ALTITUDE": 45,
                   "COMPUTE_EDGES": False, "ZEVENBERGEN": False,
-                  "MULTIDIRECTIONAL": False, "OUTPUT": "TEMPORARY_OUTPUT"}
+                  "MULTIDIRECTIONAL": True, "OUTPUT": "TEMPORARY_OUTPUT"}
         self._run("native:hillshade", params, f"{layer.name()}_hillshade")
 
     def run_roughness(self):
@@ -212,7 +290,6 @@ class RasterProcessingWidget(QWidget):
         layer = self._get_raster()
         if not layer:
             QMessageBox.warning(self, "No Raster", "Select a raster layer."); return
-        # SAGA TWI if available
         try:
             params = {"DEM": layer, "TWI": "TEMPORARY_OUTPUT"}
             self._run("saga:topographicwetnessindextwi", params, f"{layer.name()}_TWI")
@@ -233,18 +310,19 @@ class RasterProcessingWidget(QWidget):
         if not layer:
             QMessageBox.warning(self, "No Raster", "Select a raster layer."); return
         stats_lines = [f"Raster: {layer.name()}", f"CRS: {layer.crs().authid()}",
-                       f"Bands: {layer.bandCount()}", f"Size: {layer.width()} x {layer.height()} px",
+                       f"Bands: {layer.bandCount()}", f"Dimensions: {layer.width()} x {layer.height()} px",
                        f"Pixel size: {layer.rasterUnitsPerPixelX():.6f} x {layer.rasterUnitsPerPixelY():.6f}",
                        ""]
-        for b in range(1, min(layer.bandCount() + 1, 11)):
-            provider = layer.dataProvider()
-            stats = provider.bandStatistics(b)
+        stats = ElevationStyler.get_valid_elevation_stats(layer, 1)
+        if stats:
             stats_lines.append(
-                f"Band {b} ({layer.bandName(b)}):\n"
-                f"  Min: {stats.minimumValue:.4f}  Max: {stats.maximumValue:.4f}\n"
-                f"  Mean: {stats.mean:.4f}  StdDev: {stats.stdDev:.4f}"
+                f"🏔 Valid Elevation Data:\n"
+                f"  Min: {stats['min']:.4f} m   Max: {stats['max']:.4f} m\n"
+                f"  Mean: {stats['mean']:.4f} m  StdDev: {stats['std_dev']:.4f}\n"
+                f"  2%-98% Stretch: {stats['p2']:.2f} m – {stats['p98']:.2f} m\n"
+                f"  NoData Defined: {'Yes (' + str(stats['nodata_val']) + ')' if stats['has_nodata'] else 'None'}"
             )
-        QMessageBox.information(self, "Raster Statistics", "\n".join(stats_lines))
+        QMessageBox.information(self, "Raster & DEM Statistics", "\n".join(stats_lines))
 
     def run_focal_mean(self):
         layer = self._get_raster()
