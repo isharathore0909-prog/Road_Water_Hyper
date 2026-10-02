@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""GeoStudio - Map Canvas Widget (core of the application)."""
+"""
+GeoStudio - Map Canvas Widget (core of the application).
+Maintains synchronization with QgsProject via QgsLayerTreeMapCanvasBridge.
+Provides real-time coordinates and elevation sampling.
+Features an off-white background (#f8f9fa) and on-canvas elevation legend like Global Mapper.
+"""
 
 import os
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
@@ -15,7 +20,6 @@ class MapCanvasWidget(QWidget):
     Wraps the QGIS QgsMapCanvas inside a QWidget.
     Maintains synchronization with QgsProject via QgsLayerTreeMapCanvasBridge.
     Provides real-time coordinates and elevation sampling.
-    Features an off-white background (#f8f9fa) and on-canvas elevation legend like Global Mapper.
     """
 
     coordinate_changed = pyqtSignal(float, float)
@@ -41,12 +45,10 @@ class MapCanvasWidget(QWidget):
             from qgis.core import QgsProject, QgsCoordinateReferenceSystem
 
             self.canvas = QgsMapCanvas(self)
-            # Off-white map background (#f8f9fa)
             self.canvas.setCanvasColor(QColor("#f8f9fa"))
             self.canvas.enableAntiAliasing(True)
-            self.canvas.setWheelFactor(1.2)  # Smooth zoom factor
+            self.canvas.setWheelFactor(1.2)
 
-            # Multi-threaded rendering and layer caching
             try:
                 self.canvas.setParallelRenderingEnabled(True)
                 self.canvas.setCachingEnabled(True)
@@ -54,10 +56,8 @@ class MapCanvasWidget(QWidget):
             except Exception:
                 pass
 
-            # Connect mouse move for coordinates & elevation
             self.canvas.xyCoordinates.connect(self._on_coord_changed)
 
-            # Initialize Default CRS if project is empty
             proj = QgsProject.instance()
             if not proj.crs().isValid() or not proj.crs().authid():
                 default_crs = QgsCoordinateReferenceSystem("EPSG:4326")
@@ -66,23 +66,23 @@ class MapCanvasWidget(QWidget):
             else:
                 self.canvas.setDestinationCrs(proj.crs())
 
-            # Connect Project Layer Tree to Canvas Bridge
             self.bridge = QgsLayerTreeMapCanvasBridge(proj.layerTreeRoot(), self.canvas)
-
             layout.addWidget(self.canvas)
             self._setup_tools()
 
-            # Floating On-Canvas Elevation Legend (like Global Mapper)
             self.elevation_legend = ElevationLegendWidget(self.canvas)
             self.elevation_legend.move(14, 14)
 
-            # Connect project signals
+            self._extent_history = []
+            self._history_index = -1
+            self._ignore_extent_history = False
+            self.canvas.extentsChanged.connect(self._on_extents_changed)
+
             proj.layersAdded.connect(self._on_layers_added)
             proj.layersRemoved.connect(self._on_layers_changed)
             proj.crsChanged.connect(self._on_project_crs_changed)
 
         except ImportError as e:
-            # Fallback placeholder
             lbl = QLabel(f"⚠ QGIS canvas not available: {e}\nRun via GeoStudio.bat to load QGIS engine.")
             lbl.setAlignment(Qt.AlignCenter)
             lbl.setStyleSheet("color: #dc2626; font-size: 14px; background: #f8fafc;")
@@ -91,19 +91,16 @@ class MapCanvasWidget(QWidget):
         self.setLayout(layout)
 
     def set_canvas_background(self, color_str: str = "#f8f9fa"):
-        """Sets the canvas background color (off-white / dark / custom)."""
         if self.canvas:
             self.canvas.setCanvasColor(QColor(color_str))
             self.canvas.refresh()
 
     def update_elevation_legend(self, layer=None):
-        """Updates the on-screen elevation legend for the active layer."""
         if not self.elevation_legend:
             return
         if layer and ElevationStyler.is_dem_or_elevation(layer):
             self.elevation_legend.update_from_layer(layer)
         else:
-            # Find any active DEM in project
             try:
                 from qgis.core import QgsProject
                 dem_layers = [
@@ -139,7 +136,6 @@ class MapCanvasWidget(QWidget):
         self.elevation_changed.emit(elev)
 
     def _sample_elevation_at_point(self, point):
-        """Samples the elevation of the highest visible raster/DEM layer under point."""
         try:
             from qgis.core import QgsProject, QgsMapLayer
             map_crs = self.canvas.mapSettings().destinationCrs() if self.canvas else None
@@ -170,7 +166,9 @@ class MapCanvasWidget(QWidget):
     def _on_layers_added(self, layers):
         try:
             from qgis.core import QgsProject
+            from PyQt5.QtWidgets import QApplication
             proj = QgsProject.instance()
+            zoom_target = None
             for layer in layers:
                 if layer.isValid() and layer.crs().isValid():
                     valid_others = [l for l in proj.mapLayers().values() if l.isValid() and l.id() != layer.id()]
@@ -178,10 +176,17 @@ class MapCanvasWidget(QWidget):
                         proj.setCrs(layer.crs())
                         if self.canvas:
                             self.canvas.setDestinationCrs(layer.crs())
-                    self.zoom_to_layer(layer)
+                    if zoom_target is None:
+                        zoom_target = layer
                     if ElevationStyler.is_dem_or_elevation(layer):
                         self.update_elevation_legend(layer)
-                    break
+            # Always push the full layer list to canvas so it renders correctly
+            if self.canvas:
+                all_layers = list(proj.mapLayers().values())
+                self.canvas.setLayers(all_layers)
+            if zoom_target:
+                self.zoom_to_layer(zoom_target)
+            QApplication.processEvents()
         except Exception:
             pass
         self.refresh_canvas()
@@ -201,27 +206,15 @@ class MapCanvasWidget(QWidget):
         tool = tool_map.get(tool_name)
         if tool:
             self.canvas.setMapTool(tool)
-        elif tool_name in ("measure_distance", "measure_area", "identify", "select"):
+        elif tool_name == "identify":
             try:
-                if tool_name == "measure_distance":
-                    from qgis.gui import QgsMapToolMeasure
-                    from qgis.core import QgsWkbTypes
-                    t = QgsMapToolMeasure(self.canvas, QgsWkbTypes.LineGeometry)
-                    self.canvas.setMapTool(t)
-                elif tool_name == "measure_area":
-                    from qgis.gui import QgsMapToolMeasure
-                    from qgis.core import QgsWkbTypes
-                    t = QgsMapToolMeasure(self.canvas, QgsWkbTypes.PolygonGeometry)
-                    self.canvas.setMapTool(t)
-                elif tool_name == "identify":
-                    from qgis.gui import QgsMapToolIdentifyFeature
-                    t = QgsMapToolIdentifyFeature(self.canvas)
-                    self.canvas.setMapTool(t)
+                from qgis.gui import QgsMapToolIdentifyFeature
+                t = QgsMapToolIdentifyFeature(self.canvas)
+                self.canvas.setMapTool(t)
             except Exception:
                 pass
 
     def add_layer_to_canvas(self, layer):
-        """Add a layer to the map canvas display."""
         if not self.canvas or not layer:
             return
         try:
@@ -232,13 +225,31 @@ class MapCanvasWidget(QWidget):
             pass
 
     def refresh_layers(self):
-        """Refresh which layers are shown on canvas."""
         if not self.canvas:
             return
         try:
             from qgis.core import QgsProject
             layers = list(QgsProject.instance().mapLayers().values())
             self.canvas.setLayers(layers)
+            self.canvas.refresh()
+        except Exception:
+            pass
+
+    def force_refresh_canvas(self):
+        """Full repaint: clear cache, push all project layers to canvas, then refresh."""
+        if not self.canvas:
+            return
+        try:
+            from qgis.core import QgsProject
+            from PyQt5.QtWidgets import QApplication
+            layers = list(QgsProject.instance().mapLayers().values())
+            self.canvas.setLayers(layers)
+            try:
+                self.canvas.clearCache()
+            except Exception:
+                pass
+            self.canvas.refresh()
+            QApplication.processEvents()
             self.canvas.refresh()
         except Exception:
             pass
@@ -262,18 +273,63 @@ class MapCanvasWidget(QWidget):
             self.canvas.zoomToFullExtent()
             self.canvas.refresh()
 
+    def _on_extents_changed(self):
+        if getattr(self, "_ignore_extent_history", False) or not self.canvas:
+            return
+        ext = self.canvas.extent()
+        if not ext or ext.isEmpty() or ext.width() <= 0:
+            return
+
+        from qgis.core import QgsRectangle
+        if hasattr(self, "_extent_history"):
+            if 0 <= self._history_index < len(self._extent_history):
+                curr = self._extent_history[self._history_index]
+                if abs(curr.xMinimum() - ext.xMinimum()) < 1e-6 and abs(curr.width() - ext.width()) < 1e-6:
+                    return
+
+            if self._history_index < len(self._extent_history) - 1:
+                self._extent_history = self._extent_history[:self._history_index + 1]
+
+            self._extent_history.append(QgsRectangle(ext))
+            if len(self._extent_history) > 60:
+                self._extent_history.pop(0)
+            self._history_index = len(self._extent_history) - 1
+
     def zoom_last(self):
-        if self.canvas:
+        """Navigate back to previous zoom extent."""
+        if not self.canvas or not hasattr(self, "_extent_history"):
+            return
+        if self._history_index > 0:
+            self._history_index -= 1
+            ext = self._extent_history[self._history_index]
+            self._ignore_extent_history = True
+            try:
+                self.canvas.setExtent(ext)
+                self.canvas.refresh()
+            finally:
+                self._ignore_extent_history = False
+        else:
             self.canvas.zoomToPreviousExtent()
             self.canvas.refresh()
 
     def zoom_next(self):
-        if self.canvas:
+        """Navigate forward to next zoom extent."""
+        if not self.canvas or not hasattr(self, "_extent_history"):
+            return
+        if 0 <= self._history_index < len(self._extent_history) - 1:
+            self._history_index += 1
+            ext = self._extent_history[self._history_index]
+            self._ignore_extent_history = True
+            try:
+                self.canvas.setExtent(ext)
+                self.canvas.refresh()
+            finally:
+                self._ignore_extent_history = False
+        else:
             self.canvas.zoomToNextExtent()
             self.canvas.refresh()
 
     def zoom_to_layer(self, layer):
-        """Zooms and centers the canvas on the given layer extent with padding."""
         if not layer or not layer.isValid() or not self.canvas:
             return
         try:
@@ -286,7 +342,11 @@ class MapCanvasWidget(QWidget):
                 dest_crs = self.canvas.mapSettings().destinationCrs()
 
             extent = layer.extent()
-            if extent.isNull() or extent.isEmpty():
+            if extent.isNull() or extent.isEmpty() or extent.width() <= 0 or extent.height() <= 0:
+                if hasattr(layer, "dataProvider") and layer.dataProvider():
+                    extent = layer.dataProvider().extent()
+
+            if extent.isNull() or extent.width() <= 0 or extent.height() <= 0:
                 return
 
             if dest_crs.isValid() and layer.crs().isValid() and dest_crs != layer.crs():
@@ -296,7 +356,7 @@ class MapCanvasWidget(QWidget):
                 except Exception:
                     pass
 
-            extent.scale(1.05)  # 5% padding
+            extent.scale(1.05)
             self.canvas.setExtent(extent)
             self.canvas.refresh()
         except Exception:

@@ -160,13 +160,29 @@ _SVGS = {
         </svg>
     """,
     "zoom_last": """
-        <svg viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7.5" fill="#e0f2fe"/>
+            <line x1="21" y1="21" x2="16.5" y2="16.5" stroke-width="2.5"/>
+            <path d="m12 8-3 3 3 3" stroke="#0369a1" stroke-width="2"/>
+            <line x1="9" y1="11" x2="15" y2="11" stroke="#0369a1" stroke-width="2"/>
+        </svg>
+    """,
+    "zoom_next": """
+        <svg viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7.5" fill="#e0f2fe"/>
+            <line x1="21" y1="21" x2="16.5" y2="16.5" stroke-width="2.5"/>
+            <path d="m10 8 3 3-3 3" stroke="#0369a1" stroke-width="2"/>
+            <line x1="7" y1="11" x2="13" y2="11" stroke="#0369a1" stroke-width="2"/>
+        </svg>
+    """,
+    "undo": """
+        <svg viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 14 4 9l5-5"/>
             <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v1a5.5 5.5 0 0 1-5.5 5.5H11"/>
         </svg>
     """,
-    "zoom_next": """
-        <svg viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    "redo": """
+        <svg viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="m15 14 5-5-5-5"/>
             <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v1A5.5 5.5 0 0 0 9.5 21H13"/>
         </svg>

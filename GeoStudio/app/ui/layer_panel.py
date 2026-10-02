@@ -20,19 +20,31 @@ LAYER_STYLE = """
     QTreeWidget {
         background: #ffffff; color: #0f172a;
         border: 1px solid #e2e8f0; font-size: 12px; border-radius: 5px;
+        outline: none;
+        selection-background-color: #e2e8f0;
+        selection-color: #0f172a;
+    }
+    QTreeWidget::branch {
+        background: transparent;
+    }
+    QTreeWidget::branch:selected {
+        background: #e2e8f0;
+    }
+    QTreeWidget::branch:hover:!selected {
+        background: #f8fafc;
     }
     QTreeWidget::item { padding: 5px 6px; border-radius: 4px; }
-    QTreeWidget::item:selected { background: #eff6ff; color: #1d4ed8; font-weight: 600; }
+    QTreeWidget::item:selected { background: #e2e8f0; color: #0f172a; font-weight: 600; }
     QTreeWidget::item:hover:!selected { background: #f8fafc; }
     QPushButton {
         background: #ffffff; color: #334155; border: 1px solid #cbd5e1;
         border-radius: 5px; padding: 5px 8px; font-size: 11px; font-weight: 600;
     }
-    QPushButton:hover { background: #eff6ff; color: #1d4ed8; border-color: #93c5fd; }
-    QPushButton:pressed { background: #dbeafe; }
+    QPushButton:hover { background: #f1f5f9; color: #0f172a; border-color: #94a3b8; }
+    QPushButton:pressed { background: #e2e8f0; }
     QLineEdit { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1;
                 border-radius: 5px; padding: 5px 8px; font-size: 11px; }
-    QLineEdit:focus { border: 1.5px solid #2563eb; }
+    QLineEdit:focus { border: 1.5px solid #0f172a; }
     QLabel { color: #475569; font-size: 11px; }
 """
 
@@ -63,9 +75,9 @@ class LayerPanelWidget(QWidget):
         # Header
         header_box = QHBoxLayout()
         header = QLabel("🗂  LAYERS")
-        header.setStyleSheet("color: #1e40af; font-weight: bold; font-size: 11px; letter-spacing: 0.5px; padding: 2px 2px;")
+        header.setStyleSheet("color: #0f172a; font-weight: bold; font-size: 11px; letter-spacing: 0.5px; padding: 2px 2px;")
         self.count_badge = QLabel("0")
-        self.count_badge.setStyleSheet("background: #eff6ff; color: #2563eb; font-weight: 700; font-size: 10px; border-radius: 8px; padding: 1px 7px; border: 1px solid #bfdbfe;")
+        self.count_badge.setStyleSheet("background: #f1f5f9; color: #0f172a; font-weight: 700; font-size: 10px; border-radius: 8px; padding: 1px 7px; border: 1px solid #cbd5e1;")
         header_box.addWidget(header)
         header_box.addStretch()
         header_box.addWidget(self.count_badge)
@@ -126,12 +138,17 @@ class LayerPanelWidget(QWidget):
                     continue
 
                 is_vector = layer.type() == QgsMapLayer.VectorLayer
-                is_dem = (not is_vector) and ElevationStyler.is_dem_or_elevation(layer)
+                is_point_cloud = hasattr(QgsMapLayer, "PointCloudLayer") and layer.type() == QgsMapLayer.PointCloudLayer
+                is_lidar_raster = bool(layer.customProperty("is_lidar_layer", False))
+                is_dem = (not is_vector) and (not is_point_cloud) and (not is_lidar_raster) and ElevationStyler.is_dem_or_elevation(layer)
                 
-                clean_name = layer.name().replace(" [DEM]", "").replace(" [3D Relief]", "").replace(" [3D Hillshade]", "").strip()
+                clean_name = layer.name().replace(" [DEM]", "").replace(" [3D Relief]", "").replace(" [3D Hillshade]", "").replace(" [LiDAR]", "").strip()
                 if is_vector:
                     icon = "🗂"
                     label_text = f"  {icon}  {clean_name}"
+                elif is_point_cloud or is_lidar_raster:
+                    icon = "☁"
+                    label_text = f"  {icon}  {clean_name} [LiDAR]"
                 elif is_dem:
                     icon = "🏔"
                     label_text = f"  {icon}  {clean_name} [DEM]"
@@ -145,6 +162,8 @@ class LayerPanelWidget(QWidget):
 
                 if is_vector:
                     item.setForeground(0, QBrush(QColor("#15803d")))
+                elif is_point_cloud or is_lidar_raster:
+                    item.setForeground(0, QBrush(QColor("#0284c7")))
                 elif is_dem:
                     item.setForeground(0, QBrush(QColor("#b45309")))
                 else:
@@ -168,10 +187,17 @@ class LayerPanelWidget(QWidget):
     # ──────────────────────────────────────────────────────────
     # Events
     # ──────────────────────────────────────────────────────────
+    def get_active_layer(self):
+        item = self.tree.currentItem()
+        if item:
+            return self._layer_from_item(item)
+        return None
+
     def _on_item_clicked(self, item, col):
         layer = self._layer_from_item(item)
         if layer:
             self.active_layer_changed.emit(layer)
+            self.map_canvas.zoom_to_layer(layer)
 
     def _on_item_double_clicked(self, item, col):
         layer = self._layer_from_item(item)
@@ -215,14 +241,18 @@ class LayerPanelWidget(QWidget):
 
         menu = QMenu(self)
         menu.setStyleSheet("""
-            QMenu { background: #ffffff; color: #1e293b; border: 1px solid #cbd5e1; border-radius: 6px; }
-            QMenu::item:selected { background: #2563eb; color: #ffffff; }
+            QMenu { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 6px; }
+            QMenu::item:selected { background: #e2e8f0; color: #0f172a; font-weight: 600; }
             QMenu::separator { height: 1px; background: #e2e8f0; margin: 4px 0px; }
         """)
 
         menu.addAction("🔍 Zoom to Layer",        lambda: self._zoom_to(layer))
-        
-        if not is_raster:
+
+        is_point_cloud = hasattr(QgsMapLayer, "PointCloudLayer") and layer.type() == QgsMapLayer.PointCloudLayer
+        if is_point_cloud or is_dem:
+            menu.addAction("🌌 Interactive 3D Viewer...", lambda: self._open_3d_viewer(layer))
+
+        if not is_raster and not is_point_cloud:
             menu.addAction("📊 Open Attribute Table", lambda: self._open_attr_table(layer))
             menu.addAction("🎨 Change Vector Color",  lambda: self._change_color(layer))
 
@@ -323,47 +353,102 @@ class LayerPanelWidget(QWidget):
 
     def load_vector(self, path):
         try:
-            from qgis.core import QgsVectorLayer, QgsProject
-            name = os.path.splitext(os.path.basename(path))[0]
-            layer = QgsVectorLayer(path, name, "ogr")
-            if layer.isValid():
+            from ui.layer_loading_dialog import LayerLoadingProgressDialog
+            from qgis.core import QgsProject
+
+            dlg = LayerLoadingProgressDialog(self.window() or self, path, layer_type="vector")
+            if dlg.exec_() == QDialog.Accepted and dlg.loaded_layer and dlg.loaded_layer.isValid():
+                layer = dlg.loaded_layer
                 QgsProject.instance().addMapLayer(layer)
                 self.map_canvas.zoom_to_layer(layer)
                 self.active_layer_changed.emit(layer)
-            else:
-                QMessageBox.critical(None, "Error", f"Invalid layer: {path}")
         except Exception as e:
-            QMessageBox.critical(None, "Error", str(e))
+            QMessageBox.critical(None, "Vector Error", str(e))
 
     def load_raster(self, path):
         try:
-            from qgis.core import QgsRasterLayer, QgsProject
-            name = os.path.splitext(os.path.basename(path))[0]
-            layer = QgsRasterLayer(path, name)
-            if layer.isValid():
-                is_dem = ElevationStyler.is_dem_or_elevation(layer)
-                QgsProject.instance().addMapLayer(layer)
+            from ui.layer_loading_dialog import LayerLoadingProgressDialog
+            from qgis.core import QgsProject
+            from core.elevation_styler import ElevationStyler
+            from PyQt5.QtWidgets import QApplication
 
-                if is_dem:
-                    # Apply 100% Native Full-Resolution 3D Shaded Relief with smooth Bicubic Anti-Aliasing
+            dlg = LayerLoadingProgressDialog(self.window() or self, path, layer_type="raster")
+            if dlg.exec_() == QDialog.Accepted and dlg.loaded_layer and dlg.loaded_layer.isValid():
+                layer = dlg.loaded_layer
+
+                # Step 1: Align project & canvas CRS to the raster's CRS
+                if layer.crs().isValid():
+                    QgsProject.instance().setCrs(layer.crs())
+                    if self.map_canvas and self.map_canvas.canvas:
+                        self.map_canvas.canvas.setDestinationCrs(layer.crs())
+
+                # Step 2: Add base layer to project
+                QgsProject.instance().addMapLayer(layer)
+                QApplication.processEvents()
+
+                # Step 3: Apply full 3D Shaded Relief on top with Atlas color palette
+                if ElevationStyler.is_dem_or_elevation(layer):
                     ElevationStyler.apply_draped_relief(layer, preset_key="GLOBAL_MAPPER_ATLAS")
                     self.map_canvas.update_elevation_legend(layer)
-                else:
-                    # Orthomosaics & RGB Drone Imagery default to sharp raw camera pixels (Nearest Neighbor)
-                    ElevationStyler.apply_resampling(layer, mode="sharp")
+
+                # Step 4: Sync layers to canvas and zoom
+                if self.map_canvas and self.map_canvas.canvas:
+                    all_layers = list(QgsProject.instance().mapLayers().values())
+                    self.map_canvas.canvas.setLayers(all_layers)
+                    self.map_canvas.canvas.refresh()
 
                 self.map_canvas.zoom_to_layer(layer)
-                self.active_layer_changed.emit(layer)
+                QApplication.processEvents()
+                if self.map_canvas and self.map_canvas.canvas:
+                    self.map_canvas.force_refresh_canvas()
 
-                # Check and build fast pyramids in background if large
+                self.active_layer_changed.emit(layer)
                 try:
                     get_raster_optimizer().check_and_optimize(layer, self.map_canvas.canvas)
                 except Exception:
                     pass
-            else:
-                QMessageBox.critical(None, "Error", f"Invalid raster: {path}")
         except Exception as e:
-            QMessageBox.critical(None, "Error", str(e))
+            QMessageBox.critical(None, "Raster Error", str(e))
+
+    def load_point_cloud(self, path):
+        """Load LAS / LAZ / COPC Point Cloud file using QGIS Point Cloud engine with progress dialog."""
+        try:
+            from ui.layer_loading_dialog import LayerLoadingProgressDialog
+            from qgis.core import QgsProject
+            from PyQt5.QtWidgets import QApplication
+
+            dlg = LayerLoadingProgressDialog(self.window() or self, path, layer_type="point_cloud")
+            if dlg.exec_() == QDialog.Accepted and dlg.loaded_layer and dlg.loaded_layer.isValid():
+                layer = dlg.loaded_layer
+
+                # Step 1: align CRS before adding so the bridge renders in the right projection
+                if layer.crs().isValid():
+                    QgsProject.instance().setCrs(layer.crs())
+                    if self.map_canvas and self.map_canvas.canvas:
+                        self.map_canvas.canvas.setDestinationCrs(layer.crs())
+
+                # Step 2: add layer to project (bridge auto-syncs layer tree → canvas)
+                QgsProject.instance().addMapLayer(layer)
+                QApplication.processEvents()
+
+                # Step 3: explicitly push layers list to canvas in case bridge hasn't fired yet
+                if self.map_canvas and self.map_canvas.canvas:
+                    all_layers = list(QgsProject.instance().mapLayers().values())
+                    self.map_canvas.canvas.setLayers(all_layers)
+                    self.map_canvas.canvas.refresh()
+                    QApplication.processEvents()
+
+                # Step 4: zoom canvas to the new layer extent
+                self.map_canvas.zoom_to_layer(layer)
+
+                # Step 5: final refresh to ensure everything is drawn
+                QApplication.processEvents()
+                if self.map_canvas and self.map_canvas.canvas:
+                    self.map_canvas.force_refresh_canvas()
+
+                self.active_layer_changed.emit(layer)
+        except Exception as e:
+            QMessageBox.critical(None, "Point Cloud Error", f"Could not load point cloud:\n{e}")
 
     def load_osm_basemap(self):
         try:
@@ -379,18 +464,17 @@ class LayerPanelWidget(QWidget):
 
     def load_csv(self, path, x_field="longitude", y_field="latitude"):
         try:
-            from qgis.core import QgsVectorLayer, QgsProject
-            name = os.path.splitext(os.path.basename(path))[0]
-            uri = f"file:///{path}?delimiter=,&xField={x_field}&yField={y_field}&crs=epsg:4326&useHeader=yes"
-            layer = QgsVectorLayer(uri, name, "delimitedtext")
-            if layer.isValid():
+            from ui.layer_loading_dialog import LayerLoadingProgressDialog
+            from qgis.core import QgsProject
+
+            dlg = LayerLoadingProgressDialog(self.window() or self, path, layer_type="csv")
+            if dlg.exec_() == QDialog.Accepted and dlg.loaded_layer and dlg.loaded_layer.isValid():
+                layer = dlg.loaded_layer
                 QgsProject.instance().addMapLayer(layer)
                 self.map_canvas.zoom_to_layer(layer)
                 self.active_layer_changed.emit(layer)
-            else:
-                QMessageBox.critical(None, "CSV Error", "Could not load CSV. Check X/Y column names.")
         except Exception as e:
-            QMessageBox.critical(None, "Error", str(e))
+            QMessageBox.critical(None, "CSV Error", str(e))
 
     # ──────────────────────────────────────────────────────────
     # Context Menu Actions
@@ -426,6 +510,19 @@ class LayerPanelWidget(QWidget):
             QMessageBox.information(None, "Layer Properties", info)
         except Exception as e:
             QMessageBox.information(None, "Properties", str(e))
+
+    def _open_3d_viewer(self, layer):
+        if layer:
+            from ui.viewer_3d import GeoStudio3DViewerWindow
+            src = layer.customProperty("original_las_path") or (layer.source() if hasattr(layer, "source") else None)
+            if src and "_surface.tif" in src:
+                for ext in [".las", ".laz", ".copc.laz", ".e57"]:
+                    cand = src.replace("_surface.tif", ext)
+                    if os.path.exists(cand):
+                        src = cand
+                        break
+            dlg = GeoStudio3DViewerWindow(self.window() or self, layer=layer, file_path=src)
+            dlg.exec_()
 
     def _change_color(self, layer):
         try:

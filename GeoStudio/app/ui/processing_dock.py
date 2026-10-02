@@ -57,7 +57,7 @@ class ProcessingToolboxTree(QWidget):
                 font-size: 11px;
             }
             QLineEdit:focus {
-                border-color: #2563eb;
+                border-color: #0f172a;
             }
         """)
         self.search_edit.textChanged.connect(self._filter_tree)
@@ -87,19 +87,31 @@ class ProcessingToolboxTree(QWidget):
         self.tree.setStyleSheet("""
             QTreeWidget {
                 background: #ffffff;
-                color: #1e293b;
+                color: #0f172a;
                 border: 1px solid #e2e8f0;
                 border-radius: 4px;
                 font-size: 11px;
+                outline: none;
+                selection-background-color: #e2e8f0;
+                selection-color: #0f172a;
+            }
+            QTreeWidget::branch {
+                background: transparent;
+            }
+            QTreeWidget::branch:selected {
+                background: #e2e8f0;
+            }
+            QTreeWidget::branch:hover:!selected {
+                background: #f8fafc;
             }
             QTreeWidget::item {
                 padding: 4px 6px;
                 border-radius: 3px;
             }
             QTreeWidget::item:selected {
-                background: #dbeafe;
-                color: #1e40af;
-                font-weight: 500;
+                background: #e2e8f0;
+                color: #0f172a;
+                font-weight: 600;
             }
             QTreeWidget::item:hover:!selected {
                 background: #f8fafc;
@@ -132,7 +144,7 @@ class ProcessingToolboxTree(QWidget):
         self.recent_group = QTreeWidgetItem(self.tree)
         self.recent_group.setText(0, "🕒 Recently Used")
         self.recent_group.setFont(0, QFont("Segoe UI", 9, QFont.Bold))
-        self.recent_group.setForeground(0, QColor("#1e40af"))
+        self.recent_group.setForeground(0, QColor("#0f172a"))
         self.recent_group.setHidden(len(self._recently_used) == 0)
 
         # Build full multi-level hierarchy
@@ -141,13 +153,13 @@ class ProcessingToolboxTree(QWidget):
             total_cat_items = sum(len(sub["items"]) for sub in cat["subcategories"])
             cat_item.setText(0, f"{cat['category']} ({total_cat_items})")
             cat_item.setFont(0, QFont("Segoe UI", 9, QFont.Bold))
-            cat_item.setForeground(0, QColor("#1e40af"))
+            cat_item.setForeground(0, QColor("#0f172a"))
 
             for sub in cat["subcategories"]:
                 sub_item = QTreeWidgetItem(cat_item)
                 sub_item.setText(0, f"📁 {sub['name']} ({len(sub['items'])})")
-                sub_item.setFont(0, QFont("Segoe UI", 9, QFont.Medium))
-                sub_item.setForeground(0, QColor("#334155"))
+                sub_item.setFont(0, QFont("Segoe UI", 9, QFont.Bold))
+                sub_item.setForeground(0, QColor("#0f172a"))
 
                 for algo in sub["items"]:
                     item = QTreeWidgetItem(sub_item)

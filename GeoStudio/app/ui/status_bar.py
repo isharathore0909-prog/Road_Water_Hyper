@@ -47,7 +47,7 @@ class GeoStatusBar(QStatusBar):
                 font-size: 9px;
             }
             QProgressBar::chunk {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #38bdf8);
+                background: #0f172a;
                 border-radius: 2px;
             }
         """)

@@ -29,16 +29,16 @@ class AttributeTableDock(QDockWidget):
             QTableWidget { background: #ffffff; color: #0f172a; gridline-color: #e2e8f0;
                            border: 1px solid #e2e8f0; font-size: 11px; border-radius: 5px; }
             QTableWidget::item { padding: 4px 6px; }
-            QTableWidget::item:selected { background: #eff6ff; color: #1d4ed8; font-weight: 600; }
+            QTableWidget::item:selected { background: #e2e8f0; color: #0f172a; font-weight: 600; }
             QHeaderView::section { background: #f8fafc; color: #475569; border: none;
                                    border-bottom: 1px solid #cbd5e1; border-right: 1px solid #e2e8f0;
                                    padding: 5px 8px; font-weight: 600; font-size: 11px; }
             QPushButton { background: #ffffff; color: #334155; border: 1px solid #cbd5e1;
                           border-radius: 5px; padding: 4px 10px; font-size: 11px; font-weight: 600; }
-            QPushButton:hover { background: #eff6ff; color: #1d4ed8; border-color: #93c5fd; }
+            QPushButton:hover { background: #f1f5f9; color: #0f172a; border-color: #94a3b8; }
             QLineEdit { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1;
                         border-radius: 5px; padding: 4px 8px; font-size: 11px; }
-            QLineEdit:focus { border: 1.5px solid #2563eb; }
+            QLineEdit:focus { border: 1.5px solid #0f172a; }
             QLabel { color: #475569; font-size: 11px; }
         """)
         layout = QVBoxLayout(widget)
@@ -48,7 +48,7 @@ class AttributeTableDock(QDockWidget):
         # Toolbar row
         toolbar = QHBoxLayout()
         self.layer_label = QLabel("No layer selected")
-        self.layer_label.setStyleSheet("color: #1e40af; font-weight: bold; font-size: 11px; padding: 2px 4px;")
+        self.layer_label.setStyleSheet("color: #0f172a; font-weight: bold; font-size: 11px; padding: 2px 4px;")
         toolbar.addWidget(self.layer_label)
         toolbar.addStretch()
 
@@ -68,7 +68,7 @@ class AttributeTableDock(QDockWidget):
         toolbar.addWidget(btn_export)
 
         self.feature_count_label = QLabel("0 features")
-        self.feature_count_label.setStyleSheet("background: #eff6ff; color: #2563eb; font-weight: 700; font-size: 10px; border-radius: 4px; padding: 3px 8px; border: 1px solid #bfdbfe;")
+        self.feature_count_label.setStyleSheet("background: #f1f5f9; color: #0f172a; font-weight: 700; font-size: 10px; border-radius: 4px; padding: 3px 8px; border: 1px solid #cbd5e1;")
         toolbar.addWidget(self.feature_count_label)
 
         layout.addLayout(toolbar)

@@ -53,9 +53,10 @@ class SatelliteHyperspectralWidget(QWidget):
         # Inner tabs
         inner_tabs = QTabWidget()
         inner_tabs.setStyleSheet("""
-            QTabWidget::pane { border: 1px solid #e2e8f0; background: #ffffff; border-radius: 4px; }
-            QTabBar::tab { background: #f8fafc; color: #64748b; padding: 5px 8px; font-size: 10px; font-weight: 500; border: 1px solid #e2e8f0; border-top-left-radius: 4px; border-top-right-radius: 4px; margin-right: 2px; }
-            QTabBar::tab:selected { background: #ffffff; color: #2563eb; font-weight: bold; border-bottom: 1px solid #ffffff; }
+            QTabWidget::pane { border: 1px solid #e2e8f0; background: #ffffff; border-radius: 4px; top: -1px; }
+            QTabWidget::tab-bar { left: 6px; }
+            QTabBar::tab { background: #f8fafc; color: #64748b; padding: 6px 14px; font-size: 11px; font-weight: 500; border: 1px solid #e2e8f0; border-top-left-radius: 4px; border-top-right-radius: 4px; margin-right: 4px; margin-top: 2px; }
+            QTabBar::tab:selected { background: #ffffff; color: #0f172a; font-weight: bold; border-bottom: 1px solid #ffffff; margin-top: 0px; }
             QTabBar::tab:hover:!selected { background: #f1f5f9; color: #1e293b; }
         """)
 

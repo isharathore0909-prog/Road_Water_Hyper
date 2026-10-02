@@ -59,10 +59,39 @@ class QgisAlgorithmDialog(QDialog):
         # ── Tabs (Parameters, Log, Help) ──────────────────────
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet("""
-            QTabWidget::pane { border: 1px solid #e2e8f0; background: #ffffff; border-radius: 4px; }
-            QTabBar::tab { background: #f8fafc; color: #64748b; padding: 6px 16px; font-size: 11px; font-weight: 500; border: 1px solid #e2e8f0; border-top-left-radius: 4px; border-top-right-radius: 4px; margin-right: 2px; }
-            QTabBar::tab:selected { background: #ffffff; color: #2563eb; font-weight: bold; border-bottom: 1px solid #ffffff; }
-            QTabBar::tab:hover:!selected { background: #f1f5f9; color: #1e293b; }
+            QTabWidget::pane {
+                border: 1px solid #e2e8f0;
+                background: #ffffff;
+                border-radius: 6px;
+                top: -1px;
+            }
+            QTabWidget::tab-bar {
+                left: 8px;
+            }
+            QTabBar::tab {
+                background: #f8fafc;
+                color: #64748b;
+                padding: 7px 18px;
+                font-size: 11px;
+                font-weight: 500;
+                border: 1px solid #e2e8f0;
+                border-top-left-radius: 5px;
+                border-top-right-radius: 5px;
+                margin-right: 4px;
+                margin-top: 3px;
+                min-width: 70px;
+            }
+            QTabBar::tab:selected {
+                background: #ffffff;
+                color: #0f172a;
+                font-weight: 700;
+                border-bottom: 1px solid #ffffff;
+                margin-top: 0px;
+            }
+            QTabBar::tab:hover:!selected {
+                background: #f1f5f9;
+                color: #1e293b;
+            }
         """)
 
         # ── Tab 1: Parameters ──
@@ -81,7 +110,7 @@ class QgisAlgorithmDialog(QDialog):
         self.output_edit = QLineEdit("[Create temporary layer]")
         self.output_edit.setReadOnly(True)
         btn_browse_out = QPushButton("...")
-        btn_browse_out.setMaximumWidth(36)
+        btn_browse_out.setMinimumWidth(38)
         btn_browse_out.clicked.connect(self._browse_output)
         out_row.addWidget(self.output_edit)
         out_row.addWidget(btn_browse_out)
@@ -133,7 +162,7 @@ class QgisAlgorithmDialog(QDialog):
         log_layout.setContentsMargins(8, 8, 8, 8)
         self.log_edit = QTextEdit()
         self.log_edit.setReadOnly(True)
-        self.log_edit.setStyleSheet("background: #0f172a; color: #e2e8f0; font-family: monospace; font-size: 11px; border-radius: 4px; padding: 6px;")
+        self.log_edit.setStyleSheet("background: #ffffff; color: #0f172a; font-family: monospace; font-size: 11px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 6px;")
         log_layout.addWidget(self.log_edit)
         self.tabs.addTab(log_page, "Log")
 
@@ -190,7 +219,7 @@ class QgisAlgorithmDialog(QDialog):
             self.mtl_path_edit = QLineEdit()
             self.mtl_path_edit.setPlaceholderText("Select Landsat *_MTL.txt metadata file...")
             btn_mtl = QPushButton("Browse...")
-            btn_mtl.setMaximumWidth(75)
+            btn_mtl.setMinimumWidth(85)
             btn_mtl.clicked.connect(self._browse_mtl_file)
             mtl_row.addWidget(self.mtl_path_edit)
             mtl_row.addWidget(btn_mtl)
@@ -268,7 +297,7 @@ class QgisAlgorithmDialog(QDialog):
             self.raw_img_edit = QLineEdit()
             self.raw_img_edit.setPlaceholderText("Select unreferenced image/map...")
             btn_raw = QPushButton("Browse...")
-            btn_raw.setMaximumWidth(75)
+            btn_raw.setMinimumWidth(85)
             btn_raw.clicked.connect(self._browse_raw_img)
             img_row.addWidget(self.raw_img_edit)
             img_row.addWidget(btn_raw)
@@ -506,10 +535,10 @@ class QgisAlgorithmDialog(QDialog):
             elapsed = time.time() - start_t
             self.progress_bar.setValue(100)
             self.progress_bar.setFormat("✓ Completed successfully")
-            self.log(f"\n<span style='color:#4ade80;'><b>Execution completed in {elapsed:.2f} seconds</b></span>")
+            self.log(f"\n<span style='color:#16a34a;'><b>Execution completed in {elapsed:.2f} seconds</b></span>")
 
         except Exception as e:
             self.progress_bar.setValue(0)
             self.progress_bar.setFormat("Error")
-            self.log(f"\n<span style='color:#f87171;'><b>Execution error:</b> {e}</span>")
+            self.log(f"\n<span style='color:#dc2626;'><b>Execution error:</b> {e}</span>")
             QMessageBox.critical(self, "Processing Error", str(e))

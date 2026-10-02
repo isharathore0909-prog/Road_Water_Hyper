@@ -134,7 +134,7 @@ def build_main_menus(mw):
     m_raster.addSeparator()
     m_raster.addAction(_act(mw, "Raster Calculator...", mw.open_band_math_dialog))
     m_raster.addAction(_act(mw, "Raster Statistics...", mw.raster_stats))
-    m_raster.addAction(_act(mw, "Clip Raster by Extent...", mw.raster_clip, icon_key="clip"))
+    m_raster.addAction(_act(mw, "Crop / Clip Raster by Polygon Mask...", mw.open_crop_raster_dialog, icon_key="clip"))
     m_raster.addAction(_act(mw, "Reproject / Warp Raster...", mw.raster_reproject))
 
     # ── 9. Satellite ──────────────────────────────────────────

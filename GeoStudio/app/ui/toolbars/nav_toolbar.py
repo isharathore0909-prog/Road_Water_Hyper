@@ -33,8 +33,6 @@ class NavToolBar(QToolBar):
             ("zoom_in", "Zoom In", self.mw.set_zoom_in, "Zoom In (+)", "+"),
             ("zoom_out", "Zoom Out", self.mw.set_zoom_out, "Zoom Out (-)", "-"),
             ("zoom_full", "Zoom Full", self.mw.zoom_full, "Zoom to Full Extent (Ctrl+Shift+F)", "Ctrl+Shift+F"),
-            ("zoom_last", "Zoom Last", self.mw.zoom_last, "Zoom Last (Ctrl+[)", "Ctrl+["),
-            ("zoom_next", "Zoom Next", self.mw.zoom_next, "Zoom Next (Ctrl+])", "Ctrl+]"),
             ("refresh", "Refresh", self.mw.refresh_canvas, "Refresh Map Canvas (F5)", "F5"),
         ]
         for icon_key, text, slot, tip, shortcut in items:
@@ -44,6 +42,8 @@ class NavToolBar(QToolBar):
             btn.setToolTip(tip)
             btn.setStatusTip(tip)
             btn.clicked.connect(slot)
+            if shortcut:
+                btn.setShortcut(shortcut)
             btn_row.addWidget(btn)
 
         layout.addLayout(btn_row)

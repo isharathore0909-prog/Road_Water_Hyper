@@ -154,11 +154,11 @@ class ElevationStyler:
             return False
 
         band_count = layer.bandCount()
-        if band_count not in (1, 4):  # 1-band raw or 4-band in-memory shaded relief
-            return False
+        if band_count == 4:
+            return getattr(layer, "_is_3d_relief", False)
 
-        if band_count == 4 and "[DEM]" in layer.name():
-            return True
+        if band_count != 1:
+            return False
 
         name_lower = layer.name().lower()
         source_lower = layer.source().lower()
@@ -167,7 +167,7 @@ class ElevationStyler:
             if kw in name_lower or kw in source_lower:
                 return True
 
-        exts = [".dem", ".dtm", ".dsm", ".hgt", ".asc", ".bil", ".flt", ".xyz"]
+        exts = [".dem", ".dtm", ".dsm", ".hgt", ".asc", ".bil", ".flt", ".xyz", ".tif", ".tiff"]
         if any(source_lower.endswith(ext) for ext in exts):
             return True
 
@@ -445,26 +445,56 @@ class ElevationStyler:
         cls.apply_elevation_colormap(layer, preset_key=preset_key)
         cls.apply_resampling(layer)
 
-        # Calculate intelligent adaptive Z-factor
+        # Calculate intelligent adaptive Z-factor (enhanced for subtle terrain/rivers)
         stats = cls.get_valid_elevation_stats(layer, 1)
         if stats and (z_factor is None or z_factor <= 0):
             dz = stats["max"] - stats["min"]
-            if dz <= 10.0:
-                z_factor = 5.0
-            elif dz <= 30.0:
+            if dz <= 15.0:
+                z_factor = 12.0
+            elif dz <= 40.0:
+                z_factor = 6.0
+            elif dz <= 120.0:
                 z_factor = 3.5
-            elif dz <= 100.0:
-                z_factor = 2.5
             else:
-                z_factor = 1.5
+                z_factor = 2.0
         elif z_factor is None:
-            z_factor = 2.5
+            z_factor = 4.0
 
         proj = QgsProject.instance()
         clean_name = re.sub(r'(\s*\[DEM\])+', '', layer.name()).strip()
         clean_name = re.sub(r'(\s*\[3D Hillshade\])+', '', clean_name).strip()
+        clean_name = re.sub(r'(\s*\[3D Relief\])+', '', clean_name).strip()
 
-        # Check if paired hillshade layer already exists
+        # Generate standalone 3D relief raster combining Hillshade + Color Ramp
+        try:
+            relief_path = cls.generate_3d_relief_raster(source, preset_key=preset_key, z_factor=z_factor, azimuth=azimuth, altitude=altitude)
+            if relief_path and os.path.exists(relief_path):
+                relief_layer = QgsRasterLayer(relief_path, f"{clean_name} [3D Relief]")
+                if relief_layer.isValid():
+                    relief_layer._raw_dem_source = source
+                    relief_layer._is_sub_relief_layer = True
+                    proj.addMapLayer(relief_layer, False)
+                    root = proj.layerTreeRoot()
+                    node_parent = root.findLayer(layer.id())
+                    if node_parent and node_parent.parent():
+                        idx = node_parent.parent().children().index(node_parent)
+                        node_parent.parent().insertLayer(idx, relief_layer)
+                    else:
+                        root.insertLayer(0, relief_layer)
+
+                    layer._linked_hs_layer_id = relief_layer.id()
+                    relief_layer._linked_parent_id = layer.id()
+                    # Hide flat base layer in favor of 3D relief
+                    if node_parent:
+                        node_parent.setItemVisibilityChecked(False)
+                    relief_layer.triggerRepaint()
+                    layer.setName(f"{clean_name} [DEM]")
+                    layer.triggerRepaint()
+                    return True
+        except Exception:
+            pass
+
+        # Fallback to Hillshade pairing
         hs_layer_id = getattr(layer, "_linked_hs_layer_id", None)
         hs_layer = proj.mapLayer(hs_layer_id) if hs_layer_id else None
 
@@ -473,12 +503,19 @@ class ElevationStyler:
             hs_layer._raw_dem_source = source
             hs_layer._is_sub_relief_layer = True
             if hs_layer.isValid():
-                proj.addMapLayer(hs_layer)
+                proj.addMapLayer(hs_layer, False)
+                root = proj.layerTreeRoot()
+                node_parent = root.findLayer(layer.id())
+                if node_parent and node_parent.parent():
+                    idx = node_parent.parent().children().index(node_parent)
+                    node_parent.parent().insertLayer(idx, hs_layer)
+                else:
+                    root.insertLayer(0, hs_layer)
+
                 layer._linked_hs_layer_id = hs_layer.id()
                 hs_layer._linked_parent_id = layer.id()
 
         if hs_layer and hs_layer.isValid():
-            # Setup Multi-Directional Hillshade Renderer
             hs_renderer = QgsHillshadeRenderer(hs_layer.dataProvider(), 1, azimuth, altitude)
             hs_renderer.setMultiDirectional(True)
             hs_renderer.setZFactor(z_factor)
@@ -544,6 +581,14 @@ class ElevationStyler:
         cls.apply_resampling(layer)
         layer.triggerRepaint()
         return True
+
+    @classmethod
+    def apply_scientific_palette(cls, layer: QgsRasterLayer, palette_name: str = "TURBO", band: int = 1) -> bool:
+        """Alias to apply scientific elevation palettes (TURBO, VIRIDIS, GLOBAL_MAPPER_ATLAS, etc.)."""
+        key = palette_name.upper()
+        if key not in ELEVATION_PRESETS:
+            key = "TURBO" if "TURB" in key else ("VIRIDIS" if "VIRID" in key else "GLOBAL_MAPPER_ATLAS")
+        return cls.apply_elevation_colormap(layer, preset_key=key, band=band)
 
     @classmethod
     def apply_hillshade(

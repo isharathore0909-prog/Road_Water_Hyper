@@ -47,7 +47,7 @@ os.environ["QT_PLUGIN_PATH"]    = os.path.join(QGIS_ROOT, "apps", "Qt5", "plugin
 # ── Qt & QGIS Application (Single Unified Instance) ───────────────────────────
 from PyQt5.QtWidgets import QSplashScreen
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QPixmap, QColor, QPainter, QFont, QLinearGradient, QBrush
+from PyQt5.QtGui import QPixmap, QColor, QPainter, QFont, QLinearGradient, QBrush, QPalette
 from qgis.core import QgsApplication
 
 # High DPI Scaling for 2K/4K Displays
@@ -66,6 +66,12 @@ app.initQgis()
 app.setApplicationName("GeoStudio")
 app.setOrganizationName("GeoStudio")
 app.setStyle("Fusion")
+
+# Global Palette Highlight -> Grey
+pal = app.palette()
+pal.setColor(QPalette.Highlight, QColor("#e2e8f0"))
+pal.setColor(QPalette.HighlightedText, QColor("#0f172a"))
+app.setPalette(pal)
 
 # ── Splash Screen ─────────────────────────────────────────────────────────────
 splash_pix = QPixmap(480, 280)
