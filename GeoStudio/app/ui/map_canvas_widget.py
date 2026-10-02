@@ -45,7 +45,7 @@ class MapCanvasWidget(QWidget):
             from qgis.core import QgsProject, QgsCoordinateReferenceSystem
 
             self.canvas = QgsMapCanvas(self)
-            self.canvas.setCanvasColor(QColor("#f8f9fa"))
+            self.canvas.setCanvasColor(QColor("#ffffff"))
             self.canvas.enableAntiAliasing(True)
             self.canvas.setWheelFactor(1.2)
 

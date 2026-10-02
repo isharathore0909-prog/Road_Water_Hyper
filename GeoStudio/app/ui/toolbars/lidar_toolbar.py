@@ -31,7 +31,7 @@ class LidarToolBar(QToolBar):
         # ── 1. Action Buttons ──────────────────────────────
         items = [
             ("load_las", "Load LAS/LAZ", self.mw.load_las_file, "Load LAS / LAZ Point Cloud File"),
-            ("classify_ground", "Classify Ground", lambda: self.mw.processing_dock.open_algorithm("lidar:classify_ground"), "Classify Bare-Earth Ground Points"),
+            ("classify_ground", "Classify Ground", lambda: self.mw.run_lidar_auto_classification(), "Auto-Classify Ground & Vegetation (SMRF / HAG)"),
             ("classify_buildings", "Classify Buildings", lambda: self.mw.processing_dock.open_algorithm("lidar:classify_buildings"), "Classify Building Structures"),
             ("classify_veg", "Classify Vegetation", lambda: self.mw.processing_dock.open_algorithm("lidar:classify_veg"), "Classify Vegetation Canopy"),
             ("thin", "Thin", lambda: self.mw.processing_dock.open_algorithm("lidar:thinning"), "Point Density Decimation / Thinning"),
@@ -62,6 +62,8 @@ class LidarToolBar(QToolBar):
         colorby_menu.addAction("Classification (Ground/Veg/Building)", lambda: self.mw.set_lidar_color_mode("classification"))
         colorby_menu.addAction("Return Number (1st/Last)", lambda: self.mw.set_lidar_color_mode("return_num"))
         colorby_menu.addAction("Height Above Ground (Normalized)", lambda: self.mw.set_lidar_color_mode("hag"))
+        colorby_menu.addSeparator()
+        colorby_menu.addAction("⚡ Auto-Classify Ground & Canopy (SMRF)...", lambda: self.mw.run_lidar_auto_classification())
         btn_colorby.setMenu(colorby_menu)
         btn_row.addWidget(btn_colorby)
 

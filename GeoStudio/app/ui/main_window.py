@@ -43,6 +43,7 @@ class GeoStudioMainWindow(QMainWindow):
 
         # Apply global off-white light theme by default
         self.setStyleSheet(OFFWHITE_STYLESHEET)
+        self.setAcceptDrops(True)
 
         # Init UI components
         self._build_central_widget()
@@ -199,7 +200,7 @@ class GeoStudioMainWindow(QMainWindow):
         if path: self.layer_panel.load_csv(path)
 
     def load_las_file(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Load LAS / LAZ Point Cloud", "", "LiDAR Files (*.las *.laz *.copc.laz *.e57);;All Files (*)")
+        path, _ = QFileDialog.getOpenFileName(self, "Load LAS / LAZ / 3D Point Cloud", "", "Point Cloud Files (*.las *.laz *.copc.laz *.e57 *.ply *.xyz *.pts *.csv *.pcd);;All Files (*)")
         if path: self.layer_panel.load_point_cloud(path)
 
     def add_wms(self):          self.layer_panel.load_osm_basemap()
@@ -532,7 +533,7 @@ class GeoStudioMainWindow(QMainWindow):
                 dlg = GeoStudio3DViewerWindow(self, layer=layer, file_path=src)
                 dlg.exec_()
                 return
-        path, _ = QFileDialog.getOpenFileName(self, "Open 3D Point Cloud", "", "LiDAR Files (*.las *.laz *.copc.laz *.e57);;All Files (*)")
+        path, _ = QFileDialog.getOpenFileName(self, "Open 3D Point Cloud", "", "Point Cloud Files (*.las *.laz *.copc.laz *.e57 *.ply *.xyz *.pts *.csv *.pcd);;All Files (*)")
         if path:
             dlg = GeoStudio3DViewerWindow(self, file_path=path)
             dlg.exec_()
@@ -550,27 +551,64 @@ class GeoStudioMainWindow(QMainWindow):
             from core.elevation_styler import ElevationStyler
             from qgis.core import QgsMapLayer
             if hasattr(QgsMapLayer, "PointCloudLayer") and layer.type() == QgsMapLayer.PointCloudLayer:
+                mode_names = {
+                    "elevation": "Elevation (Z Height)",
+                    "intensity": "Intensity (Laser Reflectance)",
+                    "rgb": "RGB (True Color)",
+                    "classification": "Classification (ASPRS)",
+                    "return_num": "Return Number",
+                    "hag": "Height Above Ground (HAG)"
+                }
+                disp_name = mode_names.get(m, m.capitalize())
+
                 if m == "elevation":
-                    LidarStyler.apply_elevation_ramp(layer, "Viridis")
+                    applied = LidarStyler.apply_elevation_ramp(layer, "Turbo")
                 elif m == "intensity":
-                    LidarStyler.apply_intensity_ramp(layer)
+                    applied = LidarStyler.apply_intensity_ramp(layer)
                 elif m == "rgb":
-                    LidarStyler.apply_rgb(layer)
+                    applied = LidarStyler.apply_rgb(layer)
+                    if not applied:
+                        self.geo_status.showMessage("⚠ This point cloud has no embedded Red/Green/Blue color channels.", 4000)
+                        return
                 elif m == "classification":
-                    LidarStyler.apply_classification(layer)
+                    applied = LidarStyler.apply_classification(layer)
+                    source_file = getattr(layer, "source", lambda: "")()
+                    if source_file and os.path.exists(source_file):
+                        from core.point_cloud_indexer import PointCloudIndexer
+                        status = PointCloudIndexer.check_classification_status(source_file)
+                        if status.get("is_unclassified", False):
+                            from PyQt5.QtWidgets import QMessageBox
+                            ans = QMessageBox.question(
+                                self,
+                                "Raw Unclassified Point Cloud",
+                                "This point cloud contains raw flight data with no ground classification (all points are class 0).\n\n"
+                                "Would you like GeoStudio to auto-classify Ground & Vegetation (SMRF / HAG) now using 8-thread CPU/GPU processing?",
+                                QMessageBox.Yes | QMessageBox.No,
+                                QMessageBox.Yes
+                            )
+                            if ans == QMessageBox.Yes:
+                                self.run_lidar_auto_classification(layer)
+                                return
+                elif m == "return_num":
+                    applied = LidarStyler.apply_return_number(layer)
                 elif m == "hag":
-                    LidarStyler.apply_elevation_ramp(layer, "Turbo")
+                    applied = LidarStyler.apply_height_above_ground(layer)
                 else:
-                    LidarStyler.apply_elevation_ramp(layer, "Viridis")
+                    applied = LidarStyler.apply_elevation_ramp(layer, "Turbo")
+
+                if applied:
+                    self.map_canvas.force_refresh_canvas()
+                    self.geo_status.showMessage(f"LiDAR Display: Colored by {disp_name} for '{layer.name()}'.", 3500)
+                else:
+                    self.geo_status.showMessage(f"Could not apply {disp_name} renderer.", 3500)
+
             elif layer.type() == QgsMapLayer.RasterLayer:
                 if m in ["elevation", "hag"]:
                     ElevationStyler.apply_scientific_palette(layer, "Turbo")
-                elif m == "rgb" and layer.bandCount() >= 3:
-                    pass
-            self.map_canvas.refresh_canvas()
-            self.geo_status.showMessage(f"LiDAR Styled By: {m.capitalize()}", 3000)
+                    self.map_canvas.force_refresh_canvas()
+                    self.geo_status.showMessage(f"Raster Elevation Palette: Turbo applied for '{layer.name()}'.", 3000)
         else:
-            self.geo_status.showMessage(f"LiDAR Color By: {m.capitalize()} (No active point cloud)", 2500)
+            self.geo_status.showMessage("Please load or select a LiDAR point cloud (.las, .laz) first.", 3000)
 
     def adjust_point_cloud_size(self, delta: float):
         layer = self.layer_panel.get_active_layer()
@@ -583,7 +621,100 @@ class GeoStudioMainWindow(QMainWindow):
         if layer:
             from core.lidar_styler import LidarStyler
             sz = LidarStyler.set_point_size(layer, delta)
+            self.map_canvas.force_refresh_canvas()
             self.geo_status.showMessage(f"Point Size: {sz:.1f}px", 2000)
+
+    def run_lidar_auto_classification(self, layer=None):
+        """Auto-classifies ground (SMRF) and vegetation (HAG) on the active point cloud layer."""
+        if not layer:
+            layer = self.layer_panel.get_active_layer()
+        if not layer:
+            from qgis.core import QgsProject, QgsMapLayer
+            for l in QgsProject.instance().mapLayers().values():
+                if (hasattr(QgsMapLayer, "PointCloudLayer") and l.type() == QgsMapLayer.PointCloudLayer) or "[LiDAR]" in l.name():
+                    layer = l
+                    break
+        if not layer:
+            self.geo_status.showMessage("Please load or select a LiDAR point cloud (.las, .laz) first.", 3000)
+            return
+
+        source_file = getattr(layer, "source", lambda: "")()
+        if not source_file or not os.path.exists(source_file):
+            self.geo_status.showMessage("Could not locate local file for active point cloud layer.", 4000)
+            return
+
+        from PyQt5.QtWidgets import QProgressDialog
+        from PyQt5.QtCore import Qt, QCoreApplication
+        from core.point_cloud_indexer import PointCloudIndexer
+        from qgis.core import QgsProject, QgsPointCloudLayer
+
+        progress = QProgressDialog("Auto-classifying LiDAR Ground & Vegetation...", "Cancel", 0, 100, self)
+        progress.setWindowTitle("LiDAR Classification")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(10)
+        progress.show()
+        QCoreApplication.processEvents()
+
+        def on_progress(pct, msg):
+            if progress.wasCanceled():
+                PointCloudIndexer.cancel()
+            else:
+                progress.setValue(pct)
+                progress.setLabelText(msg)
+                QCoreApplication.processEvents()
+
+        try:
+            out_copc = PointCloudIndexer.classify_point_cloud(source_file, progress_callback=on_progress)
+            progress.close()
+
+            if out_copc and os.path.exists(out_copc):
+                clean_name = os.path.splitext(os.path.basename(out_copc))[0].replace(".copc", "")
+                new_layer = QgsPointCloudLayer(out_copc, f"{clean_name} [LiDAR]", "copc")
+                if not new_layer.isValid():
+                    new_layer = QgsPointCloudLayer(out_copc, f"{clean_name} [LiDAR]", "pdal")
+
+                if new_layer.isValid():
+                    from core.lidar_styler import LidarStyler
+                    LidarStyler.apply_classification(new_layer)
+                    QgsProject.instance().removeMapLayer(layer.id())
+                    QgsProject.instance().addMapLayer(new_layer)
+                    self.map_canvas.setExtent(new_layer.extent())
+                    self.map_canvas.force_refresh_canvas()
+                    self.geo_status.showMessage(f"Point cloud auto-classified successfully! ({clean_name})", 4500)
+                else:
+                    self.geo_status.showMessage("Classification completed, but could not attach layer.", 4000)
+            else:
+                self.geo_status.showMessage("Classification was cancelled or failed.", 3500)
+        except Exception as e:
+            progress.close()
+            self.geo_status.showMessage(f"Classification error: {e}", 4000)
+
+    # ── Drag and Drop Support ───────────────────────────────────
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if not event.mimeData().hasUrls():
+            return
+        urls = event.mimeData().urls()
+        for url in urls:
+            file_path = url.toLocalFile()
+            if not file_path or not os.path.exists(file_path):
+                continue
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext in [".las", ".laz", ".copc.laz", ".e57", ".ply", ".xyz", ".pts", ".pcd"]:
+                self.layer_panel.load_point_cloud(file_path)
+            elif ext in [".tif", ".tiff", ".dem", ".dtm", ".dsm", ".hgt", ".asc", ".img", ".nc", ".hdf", ".vrt", ".jp2"]:
+                self.layer_panel.load_raster(file_path)
+            elif ext in [".shp", ".gpkg", ".geojson", ".json", ".kml", ".gml", ".tab"]:
+                self.layer_panel.load_vector(file_path)
+            elif ext == ".csv":
+                self.layer_panel.load_point_cloud(file_path)
+        event.acceptProposedAction()
     def open_buffer_dialog(self):       self.processing_dock.open_algorithm("native:buffer")
     def open_clip_dialog(self):         self.processing_dock.open_algorithm("native:clip")
     def open_intersect_dialog(self):    self.processing_dock.open_algorithm("native:intersection")

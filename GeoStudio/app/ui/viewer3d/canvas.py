@@ -34,7 +34,7 @@ class GLPointCloudCanvas(QOpenGLWidget):
         self.point_size = 3.5
         self.show_grid = True
         self.show_bbox = True
-        self.bg_color = (0.06, 0.09, 0.16, 1.0)
+        self.bg_color = (0.0, 0.0, 0.0, 1.0)
 
         self._last_pos = QPoint()
 

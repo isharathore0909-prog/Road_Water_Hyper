@@ -210,35 +210,38 @@ class LayerLoadingProgressDialog(QDialog):
         try:
             from qgis.core import QgsPointCloudLayer, QgsCoordinateReferenceSystem
             from core.lidar_styler import LidarStyler
+            from core.point_cloud_indexer import PointCloudIndexer
 
             name = os.path.splitext(os.path.basename(self.file_path))[0]
             clean_name = name.replace(".copc", "")
 
-            self._update_progress(15, "Inspecting LiDAR point cloud headers & indexing...")
-
-            source_path = self.file_path
-            provider = "pdal"
-
+            # 1. If already .copc.laz or an existing pre-built index exists, use it; otherwise build genuine COPC octree
+            copc_path = None
             if self.file_path.lower().endswith(".copc.laz"):
-                provider = "copc"
+                copc_path = self.file_path
             else:
-                copc_candidate = os.path.splitext(self.file_path)[0] + ".copc.laz"
-                if os.path.exists(copc_candidate):
-                    source_path = copc_candidate
-                    provider = "copc"
+                target_copc = PointCloudIndexer.get_target_copc_path(self.file_path)
+                if os.path.exists(target_copc) and os.path.getsize(target_copc) > 1024:
+                    copc_path = target_copc
+                else:
+                    self._update_progress(15, "Generating Cloud-Optimized Point Cloud (.copc.laz) for discrete 3D point sprites...")
+                    copc_path = PointCloudIndexer.ensure_copc_index(self.file_path, progress_callback=self._update_progress)
 
-            self._update_progress(35, f"Opening point cloud with {provider.upper()} engine...")
+            source_path = copc_path if (copc_path and os.path.exists(copc_path)) else self.file_path
+            provider = "copc" if (copc_path and os.path.exists(copc_path)) else "pdal"
+
+            self._update_progress(75, f"Mounting discrete 3D point cloud layer ({provider.upper()})...")
             layer = QgsPointCloudLayer(source_path, f"{clean_name} [LiDAR]", provider)
 
             if not layer or not layer.isValid():
                 alt_provider = "pdal" if provider == "copc" else "copc"
-                layer = QgsPointCloudLayer(self.file_path, f"{clean_name} [LiDAR]", alt_provider)
+                layer = QgsPointCloudLayer(source_path, f"{clean_name} [LiDAR]", alt_provider)
 
             if not layer or not layer.isValid():
-                self._handle_error(f"Could not initialize LiDAR point cloud layer for:\n{self.file_path}")
+                self._handle_error(f"Could not initialize discrete 3D point cloud layer for:\n{self.file_path}")
                 return
 
-            self._update_progress(60, "Configuring spatial reference system...")
+            self._update_progress(85, "Configuring spatial reference system...")
             if not layer.crs().isValid() or not layer.crs().authid():
                 ext = layer.extent()
                 if abs(ext.xMinimum()) <= 180.0 and abs(ext.yMaximum()) <= 90.0:
@@ -246,15 +249,17 @@ class LayerLoadingProgressDialog(QDialog):
                 else:
                     layer.setCrs(QgsCoordinateReferenceSystem("EPSG:32643"))
 
-            self._update_progress(80, "Styling discrete point cloud sprites (Global Mapper style)...")
-            LidarStyler.auto_style(layer, point_size=3.0)
+            self._update_progress(92, "Styling discrete 3D point cloud sprites (True Color & Elevation)...")
+            LidarStyler.auto_style(layer, point_size=3.5)
 
             layer.setCustomProperty("original_las_path", self.file_path)
             layer.setCustomProperty("is_lidar_layer", True)
+            if copc_path:
+                layer.setCustomProperty("copc_path", copc_path)
 
-            self._update_progress(100, "LiDAR point cloud loaded successfully!")
-            self.success = True
             self.loaded_layer = layer
+            self._update_progress(100, "LiDAR dataset loaded successfully!")
+            self.success = True
             QTimer.singleShot(120, self.accept)
 
         except Exception as e:
@@ -342,4 +347,9 @@ class LayerLoadingProgressDialog(QDialog):
 
     def _on_cancel(self):
         self._is_cancelled = True
+        try:
+            from core.point_cloud_indexer import PointCloudIndexer
+            PointCloudIndexer.cancel()
+        except Exception:
+            pass
         self.reject()

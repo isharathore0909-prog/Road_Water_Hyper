@@ -38,16 +38,16 @@ class GeoStudio3DViewerWindow(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint | Qt.WindowMinimizeButtonHint)
         self.setStyleSheet("""
             QDialog {
-                background: #0f172a;
-                color: #f8fafc;
+                background: #f8fafc;
+                color: #0f172a;
                 font-family: "Segoe UI Variable Display", "Segoe UI", "Inter", sans-serif;
             }
-            QLabel { color: #cbd5e1; font-size: 11px; }
+            QLabel { color: #334155; font-size: 11px; }
             QGroupBox {
-                background: #1e293b;
-                border: 1px solid #334155;
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
                 border-radius: 6px;
-                color: #f8fafc;
+                color: #0f172a;
                 font-size: 11px;
                 font-weight: bold;
                 margin-top: 12px;
@@ -57,45 +57,56 @@ class GeoStudio3DViewerWindow(QDialog):
                 subcontrol-origin: margin;
                 left: 8px;
                 padding: 0 4px;
-                color: #38bdf8;
+                color: #0284c7;
             }
             QPushButton {
-                background: #1e293b;
-                color: #f8fafc;
-                border: 1px solid #334155;
+                background: #ffffff;
+                color: #0f172a;
+                border: 1px solid #cbd5e1;
                 border-radius: 5px;
                 padding: 6px 12px;
                 font-weight: 600;
                 font-size: 11px;
             }
             QPushButton:hover {
-                background: #334155;
-                border-color: #64748b;
+                background: #f1f5f9;
+                border-color: #94a3b8;
             }
             QPushButton:pressed {
-                background: #0284c7;
+                background: #e2e8f0;
             }
             QComboBox {
-                background: #1e293b;
-                color: #f8fafc;
-                border: 1px solid #334155;
+                background: #ffffff;
+                color: #0f172a;
+                border: 1px solid #cbd5e1;
                 border-radius: 4px;
                 padding: 4px 8px;
                 font-size: 11px;
+                min-height: 24px;
             }
-            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView {
+                background: #ffffff;
+                color: #0f172a;
+                selection-background-color: #38bdf8;
+                selection-color: #ffffff;
+            }
+            QCheckBox {
+                color: #334155;
+                font-size: 11px;
+                spacing: 6px;
+            }
             QSlider::groove:horizontal {
                 height: 4px;
-                background: #334155;
+                background: #e2e8f0;
                 border-radius: 2px;
             }
             QSlider::sub-page:horizontal {
-                background: #38bdf8;
+                background: #0284c7;
                 border-radius: 2px;
             }
             QSlider::handle:horizontal {
-                background: #f8fafc;
-                border: 1px solid #38bdf8;
+                background: #ffffff;
+                border: 2px solid #0284c7;
                 width: 14px;
                 margin-top: -5px;
                 margin-bottom: -5px;
@@ -113,12 +124,12 @@ class GeoStudio3DViewerWindow(QDialog):
         top_bar.setSpacing(10)
 
         lbl_logo = QLabel("🌌 <b>3D WORKSTATION</b>")
-        lbl_logo.setStyleSheet("color: #38bdf8; font-size: 13px; font-weight: bold;")
+        lbl_logo.setStyleSheet("color: #0284c7; font-size: 13px; font-weight: bold;")
         top_bar.addWidget(lbl_logo)
 
         fname = os.path.basename(self.file_path) if self.file_path else "No Dataset"
         self.lbl_dataset = QLabel(f"Dataset: <b>{fname}</b>")
-        self.lbl_dataset.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        self.lbl_dataset.setStyleSheet("color: #64748b; font-size: 11px;")
         top_bar.addWidget(self.lbl_dataset)
 
         top_bar.addStretch()
@@ -192,13 +203,11 @@ class GeoStudio3DViewerWindow(QDialog):
 
         self.chk_grid = QCheckBox("Show Ground Plane Grid")
         self.chk_grid.setChecked(True)
-        self.chk_grid.setStyleSheet("color: #cbd5e1; font-size: 11px;")
         self.chk_grid.toggled.connect(lambda checked: setattr(self.canvas, 'show_grid', checked) or self.canvas.update())
         vbox_env.addWidget(self.chk_grid)
 
         self.chk_bbox = QCheckBox("Show 3D Bounding Box")
         self.chk_bbox.setChecked(True)
-        self.chk_bbox.setStyleSheet("color: #cbd5e1; font-size: 11px;")
         self.chk_bbox.toggled.connect(lambda checked: setattr(self.canvas, 'show_bbox', checked) or self.canvas.update())
         vbox_env.addWidget(self.chk_bbox)
 
@@ -222,7 +231,7 @@ class GeoStudio3DViewerWindow(QDialog):
         vbox_info.addWidget(self.lbl_zrange)
 
         self.lbl_fps = QLabel("GPU Render Rate: <b>60 FPS</b>")
-        self.lbl_fps.setStyleSheet("color: #4ade80;")
+        self.lbl_fps.setStyleSheet("color: #16a34a; font-weight: bold;")
         vbox_info.addWidget(self.lbl_fps)
 
         side_layout.addWidget(grp_info)
@@ -230,12 +239,12 @@ class GeoStudio3DViewerWindow(QDialog):
 
         # Instructions
         nav_box = QFrame()
-        nav_box.setStyleSheet("background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 8px;")
+        nav_box.setStyleSheet("background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px;")
         vbox_nav = QVBoxLayout(nav_box)
         vbox_nav.setContentsMargins(4, 4, 4, 4)
         vbox_nav.setSpacing(4)
         lbl_help_title = QLabel("🖱 <b>3D Navigation Controls</b>")
-        lbl_help_title.setStyleSheet("color: #38bdf8; font-size: 11px;")
+        lbl_help_title.setStyleSheet("color: #0284c7; font-size: 11px;")
         vbox_nav.addWidget(lbl_help_title)
         vbox_nav.addWidget(QLabel("• <b>Left Drag:</b> Orbit / Rotate Camera"))
         vbox_nav.addWidget(QLabel("• <b>Middle / Shift+Left:</b> Pan 3D View"))

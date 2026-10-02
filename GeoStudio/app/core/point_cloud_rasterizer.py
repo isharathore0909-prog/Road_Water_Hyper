@@ -10,7 +10,15 @@ import time
 import struct
 import tempfile
 import numpy as np
-from osgeo import gdal, osr
+try:
+    from osgeo import gdal, osr
+except ImportError:
+    try:
+        import gdal
+        import osr
+    except ImportError:
+        gdal = None
+        osr = None
 
 
 class PointCloudRasterizer:
@@ -74,11 +82,19 @@ class PointCloudRasterizer:
             y = (y_raw * y_scale + y_off).astype(np.float64)
             z = (z_raw * z_scale + z_off).astype(np.float32)
 
-            has_rgb = point_format in [2, 3, 5, 7, 8, 10] and point_len >= 34
-            if has_rgb:
-                r_raw = np.ascontiguousarray(raw[:, 28:30]).view(np.uint16).flatten()
-                g_raw = np.ascontiguousarray(raw[:, 30:32]).view(np.uint16).flatten()
-                b_raw = np.ascontiguousarray(raw[:, 32:34]).view(np.uint16).flatten()
+            # Determine RGB byte offset based on LAS point format (0-10)
+            rgb_offset = None
+            if point_format in [2]:
+                rgb_offset = 20 if point_len >= 26 else None
+            elif point_format in [3, 5]:
+                rgb_offset = 28 if point_len >= 34 else None
+            elif point_format in [7, 8, 10]:
+                rgb_offset = 30 if point_len >= 36 else None
+
+            if rgb_offset is not None and point_len >= rgb_offset + 6:
+                r_raw = np.ascontiguousarray(raw[:, rgb_offset:rgb_offset + 2]).view(np.uint16).flatten()
+                g_raw = np.ascontiguousarray(raw[:, rgb_offset + 2:rgb_offset + 4]).view(np.uint16).flatten()
+                b_raw = np.ascontiguousarray(raw[:, rgb_offset + 4:rgb_offset + 6]).view(np.uint16).flatten()
                 if np.max(r_raw) > 255 or np.max(g_raw) > 255 or np.max(b_raw) > 255:
                     r_raw = (r_raw >> 8).astype(np.uint8)
                     g_raw = (g_raw >> 8).astype(np.uint8)
@@ -87,7 +103,9 @@ class PointCloudRasterizer:
                     r_raw = r_raw.astype(np.uint8)
                     g_raw = g_raw.astype(np.uint8)
                     b_raw = b_raw.astype(np.uint8)
+                has_rgb = True
             else:
+                has_rgb = False
                 r_raw, g_raw, b_raw = None, None, None
 
         except Exception:
