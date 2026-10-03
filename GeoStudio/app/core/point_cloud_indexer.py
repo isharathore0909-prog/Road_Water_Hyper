@@ -175,7 +175,10 @@ class PointCloudIndexer:
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 cflags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0x00004000)
 
-            from PyQt5.QtWidgets import QApplication
+            try:
+                from PyQt5.QtWidgets import QApplication
+            except ImportError:
+                QApplication = None
             import time
 
             log_path = os.path.join(tempfile.gettempdir(), f"copc_build_{int(time.time())}.log")
@@ -219,7 +222,8 @@ class PointCloudIndexer:
                     if progress_callback:
                         progress_callback(dyn_pct, status_msg)
 
-                    QApplication.processEvents()
+                    if QApplication:
+                        QApplication.processEvents()
 
             cls._current_process = None
             rc = process.poll()
@@ -294,8 +298,9 @@ class PointCloudIndexer:
         Produces ASPRS standard classes:
           - Class 2: Ground (Bare Earth)
           - Class 3: Low Vegetation (0.3m - 1.5m)
-          - Class 4: Medium Vegetation (1.5m - 4.0m)
-          - Class 5: High Vegetation / Canopy (> 4.0m)
+          - Class 4: Medium Vegetation (1.5m - 3.5m)
+          - Class 5: High Vegetation / Canopy (> 3.5m, Non-Planar)
+          - Class 6: Building / Roof Structures (HAG >= 1.8m, Planarity >= 0.65)
         """
         import json
         import time
@@ -375,12 +380,22 @@ class PointCloudIndexer:
             "type": "filters.hag_delaunay"
         })
 
+        # Multi-threaded geometric neighborhood planarity estimation
+        stages.append({
+            "type": "filters.covariancefeatures",
+            "knn": 16,
+            "threads": 8,
+            "feature_set": ["Planarity", "Scattering"]
+        })
+
+        # Classify Ground, Vegetation, and Planar Building Roofs
         stages.append({
             "type": "filters.assign",
             "value": [
                 "Classification = 3 WHERE HeightAboveGround >= 0.3 && HeightAboveGround < 1.5 && Classification != 2",
-                "Classification = 4 WHERE HeightAboveGround >= 1.5 && HeightAboveGround < 4.0 && Classification != 2",
-                "Classification = 5 WHERE HeightAboveGround >= 4.0 && Classification != 2"
+                "Classification = 4 WHERE HeightAboveGround >= 1.5 && HeightAboveGround < 3.5 && Planarity < 0.65 && Classification != 2",
+                "Classification = 5 WHERE HeightAboveGround >= 3.5 && Planarity < 0.65 && Classification != 2",
+                "Classification = 6 WHERE HeightAboveGround >= 1.8 && Planarity >= 0.65 && Classification != 2"
             ]
         })
 
@@ -409,7 +424,10 @@ class PointCloudIndexer:
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             cflags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
-        from PyQt5.QtWidgets import QApplication
+        try:
+            from PyQt5.QtWidgets import QApplication
+        except ImportError:
+            QApplication = None
         proc = subprocess.Popen(
             [pdal_exe, 'pipeline', pipe_path],
             env=env,
@@ -435,15 +453,16 @@ class PointCloudIndexer:
 
             if elapsed < 20:
                 msg = f"Detecting bare-earth ground via SMRF ({dyn_pct}% • {int(elapsed)}s)..."
-            elif elapsed < 45:
-                msg = f"Computing height-above-ground & classifying canopy ({dyn_pct}% • {int(elapsed)}s)..."
+            elif elapsed < 50:
+                msg = f"Extracting building planarity & classifying canopy ({dyn_pct}% • {int(elapsed)}s)..."
             else:
                 msg = f"Writing classified COPC dataset ({dyn_pct}% • {int(elapsed)}s)..."
 
             if progress_callback:
                 progress_callback(dyn_pct, msg)
 
-            QApplication.processEvents()
+            if QApplication:
+                QApplication.processEvents()
 
         cls._current_process = None
         rc = proc.poll()

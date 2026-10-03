@@ -292,7 +292,7 @@ class LidarStyler:
             categories = [
                 QgsPointCloudCategory(0, QColor("#94a3b8"), "0: Never Classified"),
                 QgsPointCloudCategory(1, QColor("#cbd5e1"), "1: Unassigned"),
-                QgsPointCloudCategory(2, QColor("#92400e"), "2: Ground (Bare Earth)"),
+                QgsPointCloudCategory(2, QColor("#d4a373"), "2: Ground (Light Brown / Tan)"),
                 QgsPointCloudCategory(3, QColor("#86efac"), "3: Low Vegetation"),
                 QgsPointCloudCategory(4, QColor("#22c55e"), "4: Medium Vegetation"),
                 QgsPointCloudCategory(5, QColor("#15803d"), "5: High Vegetation / Canopy"),

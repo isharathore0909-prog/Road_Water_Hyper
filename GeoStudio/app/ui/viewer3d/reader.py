@@ -392,13 +392,13 @@ class PointCloudReader:
     def apply_las_classification(classes: np.ndarray) -> np.ndarray:
         """Standard ASPRS LAS point cloud classification palette."""
         palette = {
-            0: (0.6, 0.6, 0.6),    # Unclassified
-            1: (0.7, 0.7, 0.7),    # Unassigned
-            2: (0.58, 0.29, 0.0),  # Ground (Brown)
-            3: (0.55, 0.90, 0.55), # Low Veg (Light Green)
-            4: (0.13, 0.75, 0.13), # Medium Veg (Green)
-            5: (0.05, 0.45, 0.05), # High Veg / Canopy (Dark Green)
-            6: (0.90, 0.20, 0.20), # Building (Red)
+            0: (0.6, 0.6, 0.6),      # Unclassified
+            1: (0.7, 0.7, 0.7),      # Unassigned
+            2: (0.83, 0.64, 0.45),   # Ground (Light Sandy Brown / Tan)
+            3: (0.55, 0.90, 0.55),   # Low Veg (Light Green)
+            4: (0.13, 0.75, 0.13),   # Medium Veg (Green)
+            5: (0.05, 0.45, 0.05),   # High Veg / Canopy (Dark Green)
+            6: (0.95, 0.15, 0.15),   # Building (Vivid Red)
             7: (0.40, 0.40, 0.40), # Low Point / Noise
             8: (0.95, 0.60, 0.10), # Key-point
             9: (0.00, 0.50, 0.95), # Water (Blue)
