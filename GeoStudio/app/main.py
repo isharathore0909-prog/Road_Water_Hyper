@@ -59,7 +59,7 @@ except Exception:
     pass
 
 # Create sole application object
-argv_bytes = [arg.encode('utf-8') if isinstance(arg, str) else arg for arg in sys.argv] if sys.argv else []
+argv_bytes = [arg.encode('utf-8') if isinstance(arg, str) else arg for arg in sys.argv] if sys.argv else [b"GeoStudio"]
 app = QgsApplication(argv_bytes, True)
 app.setPrefixPath(QGIS_APP, True)
 app.initQgis()
@@ -141,14 +141,15 @@ QTimer.singleShot(1400, window.raise_)
 exit_code = app.exec_()
 
 try:
-    if 'window' in locals():
-        window.close()
-        del window
-    if 'splash' in locals():
-        del splash
+    from qgis.core import QgsProject
+    QgsProject.instance().clear()
+except Exception:
+    pass
+
+try:
     app.exitQgis()
 except Exception:
     pass
 
-sys.exit(0 if exit_code is None else exit_code)
+os._exit(0 if exit_code is None else exit_code)
 

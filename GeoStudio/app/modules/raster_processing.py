@@ -5,16 +5,13 @@ Global Mapper & ArcGIS Style Elevation Rendering, Slope, Aspect, Hillshade, Cont
 """
 
 from qgis.PyQt.QtWidgets import (
-    QWidget, QVBoxLayout, QFormLayout, QPushButton, QLabel,
-    QComboBox, QDoubleSpinBox, QGroupBox, QSpinBox,
-    QMessageBox, QProgressBar, QHBoxLayout, QCheckBox
+    QWidget, QVBoxLayout, QFormLayout, QPushButton,
+    QComboBox, QDoubleSpinBox, QGroupBox, QMessageBox, QProgressBar, QHBoxLayout
 )
-from qgis.PyQt.QtCore import Qt
-from qgis.core import QgsProject, QgsMapLayer, QgsRasterLayer
-import processing
-
-from core.elevation_styler import ElevationStyler, ELEVATION_PRESETS
+from qgis.core import QgsProject, QgsMapLayer
+from core.elevation_styler import ElevationStyler
 from core.style import MODULE_STYLE
+from app.modules.raster_operations import run_raster_processing_algo, get_raster_stats_text
 
 STYLE = MODULE_STYLE
 
@@ -36,7 +33,7 @@ class RasterProcessingWidget(QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
-        # --- Input Raster ---
+        # Input Raster
         input_box = QGroupBox("Input Raster / DEM Layer")
         input_form = QFormLayout()
         self.raster_combo = QComboBox()
@@ -47,7 +44,7 @@ class RasterProcessingWidget(QWidget):
         input_box.setLayout(input_form)
         layout.addWidget(input_box)
 
-        # --- Elevation Symbology (Global Mapper / ArcGIS) ---
+        # Elevation Symbology
         style_box = QGroupBox("🏔 Elevation Symbology (Global Mapper / ArcGIS)")
         style_layout = QVBoxLayout()
 
@@ -83,7 +80,7 @@ class RasterProcessingWidget(QWidget):
         style_box.setLayout(style_layout)
         layout.addWidget(style_box)
 
-        # --- DEM Analysis ---
+        # DEM Analysis
         dem_box = QGroupBox("DEM Terrain Analysis")
         dem_layout = QVBoxLayout()
 
@@ -96,11 +93,11 @@ class RasterProcessingWidget(QWidget):
         dem_layout.addLayout(z_form)
 
         ops = [
-            ("🏔 Slope Map",      self.run_slope),
-            ("🧭 Aspect Map",     self.run_aspect),
-            ("💡 Generate Hillshade Layer",  self.run_hillshade),
-            ("📏 Roughness",      self.run_roughness),
-            ("🌊 TWI",            self.run_twi),
+            ("🏔 Slope Map", self.run_slope),
+            ("🧭 Aspect Map", self.run_aspect),
+            ("💡 Generate Hillshade Layer", self.run_hillshade),
+            ("📏 Roughness", self.run_roughness),
+            ("🌊 TWI", self.run_twi),
         ]
         for label, func in ops:
             btn = QPushButton(label)
@@ -110,7 +107,7 @@ class RasterProcessingWidget(QWidget):
         dem_box.setLayout(dem_layout)
         layout.addWidget(dem_box)
 
-        # --- Contours ---
+        # Contours
         contour_box = QGroupBox("Contour Lines")
         contour_form = QFormLayout()
         self.contour_interval = QDoubleSpinBox()
@@ -124,7 +121,7 @@ class RasterProcessingWidget(QWidget):
         contour_box.setLayout(contour_form)
         layout.addWidget(contour_box)
 
-        # --- Raster Calculator & Utilities ---
+        # Raster Utilities
         calc_box = QGroupBox("Raster Utilities")
         calc_layout = QVBoxLayout()
         btn_stats = QPushButton("📊 Raster Statistics")
@@ -142,7 +139,6 @@ class RasterProcessingWidget(QWidget):
         calc_box.setLayout(calc_layout)
         layout.addWidget(calc_box)
 
-        # Progress
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
@@ -153,10 +149,7 @@ class RasterProcessingWidget(QWidget):
         self.setLayout(layout)
 
     def _refresh_layers(self):
-        layers = [
-            l for l in QgsProject.instance().mapLayers().values()
-            if l.type() == QgsMapLayer.RasterLayer
-        ]
+        layers = [l for l in QgsProject.instance().mapLayers().values() if l.type() == QgsMapLayer.RasterLayer]
         current = self.raster_combo.currentText()
         self.raster_combo.clear()
         self.raster_combo.addItem("-- None --", None)
@@ -177,9 +170,7 @@ class RasterProcessingWidget(QWidget):
 
     def _get_raster(self):
         layer_id = self.raster_combo.currentData()
-        if not layer_id:
-            return None
-        return QgsProject.instance().mapLayer(layer_id)
+        return QgsProject.instance().mapLayer(layer_id) if layer_id else None
 
     def open_elevation_dialog(self):
         layer = self._get_raster()
@@ -199,59 +190,27 @@ class RasterProcessingWidget(QWidget):
         if not layer:
             QMessageBox.warning(self, "No Raster", "Select a raster layer first."); return
         ElevationStyler.apply_elevation_colormap(layer, preset_key=preset_key)
-        try:
-            if hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
-                self.iface.mapCanvas().refresh()
-        except Exception:
-            pass
+        if hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
+            self.iface.mapCanvas().refresh()
 
     def _apply_quick_hillshade(self):
         layer = self._get_raster()
         if not layer:
             QMessageBox.warning(self, "No Raster", "Select a raster layer first."); return
         ElevationStyler.apply_hillshade(layer, band=1, z_factor=self.z_factor.value(), multidirectional=True)
-        try:
-            if hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
-                self.iface.mapCanvas().refresh()
-        except Exception:
-            pass
+        if hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
+            self.iface.mapCanvas().refresh()
 
     def _apply_quick_gray(self):
         layer = self._get_raster()
         if not layer:
             QMessageBox.warning(self, "No Raster", "Select a raster layer first."); return
         ElevationStyler.apply_grayscale_contrast(layer, band=1, stretch_type="cumulative_cut")
-        try:
-            if hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
-                self.iface.mapCanvas().refresh()
-        except Exception:
-            pass
+        if hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
+            self.iface.mapCanvas().refresh()
 
     def _run(self, algo, params, name):
-        self.progress.setFormat(f"Running {name}...")
-        self.progress.setValue(20)
-        try:
-            result = processing.run(algo, params)
-            output = result.get("OUTPUT") or result.get("output")
-            if output:
-                if isinstance(output, str):
-                    from qgis.core import QgsVectorLayer
-                    if output.endswith(".shp") or "memory:" in output or "??" in output:
-                        l = QgsVectorLayer(output, name, "ogr")
-                    else:
-                        l = QgsRasterLayer(output, name)
-                    if l.isValid():
-                        QgsProject.instance().addMapLayer(l)
-                elif hasattr(output, "isValid"):
-                    output.setName(name)
-                    QgsProject.instance().addMapLayer(output)
-            self.progress.setValue(100)
-            self.progress.setFormat(f"✓ {name} done")
-            if hasattr(self.iface, "messageBar") and self.iface.messageBar():
-                self.iface.messageBar().pushSuccess("GeoStudio", f"{name} completed!")
-        except Exception as e:
-            self.progress.setFormat("Error")
-            QMessageBox.critical(self, "Error", str(e))
+        run_raster_processing_algo(algo, params, name, progress_bar=self.progress, iface=self.iface, parent_widget=self)
 
     def run_slope(self):
         layer = self._get_raster()
@@ -309,28 +268,15 @@ class RasterProcessingWidget(QWidget):
         layer = self._get_raster()
         if not layer:
             QMessageBox.warning(self, "No Raster", "Select a raster layer."); return
-        stats_lines = [f"Raster: {layer.name()}", f"CRS: {layer.crs().authid()}",
-                       f"Bands: {layer.bandCount()}", f"Dimensions: {layer.width()} x {layer.height()} px",
-                       f"Pixel size: {layer.rasterUnitsPerPixelX():.6f} x {layer.rasterUnitsPerPixelY():.6f}",
-                       ""]
-        stats = ElevationStyler.get_valid_elevation_stats(layer, 1)
-        if stats:
-            stats_lines.append(
-                f"🏔 Valid Elevation Data:\n"
-                f"  Min: {stats['min']:.4f} m   Max: {stats['max']:.4f} m\n"
-                f"  Mean: {stats['mean']:.4f} m  StdDev: {stats['std_dev']:.4f}\n"
-                f"  2%-98% Stretch: {stats['p2']:.2f} m – {stats['p98']:.2f} m\n"
-                f"  NoData Defined: {'Yes (' + str(stats['nodata_val']) + ')' if stats['has_nodata'] else 'None'}"
-            )
-        QMessageBox.information(self, "Raster & DEM Statistics", "\n".join(stats_lines))
+        text = get_raster_stats_text(layer)
+        QMessageBox.information(self, "Raster & DEM Statistics", text)
 
     def run_focal_mean(self):
         layer = self._get_raster()
         if not layer:
             QMessageBox.warning(self, "No Raster", "Select a raster layer."); return
         params = {"INPUT": layer, "BAND": 1, "NEIGHBORHOOD": 0, "NEIGHBORHOOD_SIZE": 3,
-                  "KERNEL_RADIUS": 1, "PIXEL_SIZE": 0, "OUTPUT_TYPE": 5,
-                  "OUTPUT": "TEMPORARY_OUTPUT"}
+                  "KERNEL_RADIUS": 1, "PIXEL_SIZE": 0, "OUTPUT_TYPE": 5, "OUTPUT": "TEMPORARY_OUTPUT"}
         try:
             self._run("native:focalstatistics", params, f"{layer.name()}_focal_mean")
         except Exception:
@@ -340,9 +286,7 @@ class RasterProcessingWidget(QWidget):
         layer = self._get_raster()
         if not layer:
             QMessageBox.warning(self, "No Raster", "Select a raster layer."); return
-        params = {"INPUT": layer, "TARGET_CRS": "EPSG:4326",
-                  "RESAMPLING": 0, "NODATA": None, "TARGET_RESOLUTION": None,
-                  "OPTIONS": "", "DATA_TYPE": 0, "TARGET_EXTENT": None,
-                  "TARGET_EXTENT_CRS": None, "MULTITHREADING": False,
-                  "EXTRA": "", "OUTPUT": "TEMPORARY_OUTPUT"}
+        params = {"INPUT": layer, "TARGET_CRS": "EPSG:4326", "RESAMPLING": 0, "NODATA": None,
+                  "TARGET_RESOLUTION": None, "OPTIONS": "", "DATA_TYPE": 0, "TARGET_EXTENT": None,
+                  "TARGET_EXTENT_CRS": None, "MULTITHREADING": False, "EXTRA": "", "OUTPUT": "TEMPORARY_OUTPUT"}
         self._run("gdal:warpreproject", params, f"{layer.name()}_WGS84")

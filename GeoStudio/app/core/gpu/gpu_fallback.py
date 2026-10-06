@@ -49,10 +49,10 @@ class CpuFallbackKernels:
 
         elif mode == "aspect":
             aspect_rad = np.arctan2(dz_dy, -dz_dx)
-            aspect_deg = np.degrees(aspect_rad)
-            aspect_deg = np.where(aspect_deg < 0.0, 90.0 - aspect_deg, 90.0 - aspect_deg)
-            aspect_deg = np.where(aspect_deg > 90.0, 360.0 - aspect_deg + 90.0, 90.0 - aspect_deg)
-            return np.remainder(aspect_deg, 360.0).astype(np.float32)
+            aspect_deg = np.remainder(90.0 - np.degrees(aspect_rad), 360.0)
+            flat_mask = (dz_dx == 0.0) & (dz_dy == 0.0)
+            aspect_deg = np.where(flat_mask, -1.0, aspect_deg)
+            return aspect_deg.astype(np.float32)
 
         elif mode == "hillshade":
             zenith_rad = math.radians(90.0 - altitude_deg)
@@ -70,6 +70,30 @@ class CpuFallbackKernels:
 
         elif mode == "tri":
             return np.sqrt(dz_dx ** 2 + dz_dy ** 2).astype(np.float32)
+
+        elif mode == "tpi":
+            # Topographic Position Index: z5 - mean(8-neighborhood)
+            z5 = data[1:-1, 1:-1]
+            mean_nbr = (z1 + z2 + z3 + z4 + z6 + z7 + z8 + z9) / 8.0
+            return (z5 - mean_nbr).astype(np.float32)
+
+        elif mode == "curvature":
+            # Total Surface Curvature (Laplacian of elevation in 100x scale)
+            z5 = data[1:-1, 1:-1]
+            d2z_dx2 = (z4 - 2.0 * z5 + z6) / (cellsize_x ** 2)
+            d2z_dy2 = (z2 - 2.0 * z5 + z8) / (cellsize_y ** 2)
+            curv = -2.0 * (d2z_dx2 + d2z_dy2) * 100.0
+            return curv.astype(np.float32)
+
+        elif mode == "twi":
+            # Topographic Wetness Index proxy: ln(a / (tan(beta) + eps))
+            slope_rad = np.arctan(np.sqrt(dz_dx ** 2 + dz_dy ** 2))
+            tan_slope = np.maximum(np.tan(slope_rad), 0.001)
+            z5 = data[1:-1, 1:-1]
+            laplacian = (z1 + z2 + z3 + z4 + z6 + z7 + z8 + z9) - 8.0 * z5
+            area_proxy = cellsize_x * (1.0 + np.maximum(laplacian, 0.0))
+            twi = np.log(np.maximum(area_proxy / tan_slope, 1e-4))
+            return twi.astype(np.float32)
 
         return data[1:-1, 1:-1].astype(np.float32)
 

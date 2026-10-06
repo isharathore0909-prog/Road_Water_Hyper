@@ -26,8 +26,8 @@ class ElevationProfileDialog(QDialog):
         super().__init__(parent or main_window)
         self.mw = main_window
         self.setWindowTitle("Elevation Profile & Terrain Transect")
-        self.resize(850, 520)
-        self.setMinimumSize(680, 420)
+        self.resize(960, 580)
+        self.setMinimumSize(800, 450)
 
         self._distances = []
         self._elevations = []
@@ -38,43 +38,57 @@ class ElevationProfileDialog(QDialog):
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
         # ── Header & Toolbar ──────────────────────────────
         top_bar = QHBoxLayout()
         top_bar.setSpacing(8)
 
-        top_bar.addWidget(QLabel("DEM Layer:"))
-        self.combo_layer = QComboBox()
-        self.combo_layer.setMinimumWidth(200)
-        top_bar.addWidget(self.combo_layer)
+        lbl_dem = QLabel("DEM Surface:")
+        lbl_dem.setStyleSheet("font-weight: 600; color: #334155;")
+        top_bar.addWidget(lbl_dem)
 
-        top_bar.addWidget(QLabel("Samples:"))
+        self.combo_layer = QComboBox()
+        self.combo_layer.setMinimumWidth(180)
+        self.combo_layer.setStyleSheet("padding: 4px 8px; font-size: 12px;")
+        top_bar.addWidget(self.combo_layer, 2)
+
+        lbl_samp = QLabel("Samples:")
+        lbl_samp.setStyleSheet("font-weight: 600; color: #334155;")
+        top_bar.addWidget(lbl_samp)
+
         self.spin_samples = QSpinBox()
         self.spin_samples.setRange(50, 2000)
         self.spin_samples.setValue(300)
         self.spin_samples.setSingleStep(50)
+        self.spin_samples.setFixedWidth(75)
+        self.spin_samples.setStyleSheet("padding: 3px 6px; font-size: 12px;")
         top_bar.addWidget(self.spin_samples)
 
-        btn_draw = QPushButton("✏ Draw Transect on Map")
+        btn_draw = QPushButton("✏ Draw Profile")
+        btn_draw.setToolTip("Draw interactive transect line across map canvas")
         btn_draw.setStyleSheet(
-            "background: #0284c7; color: white; font-weight: bold; padding: 6px 12px; border-radius: 4px;"
+            "background: #0284c7; color: white; font-weight: bold; padding: 6px 14px; border-radius: 4px; font-size: 12px;"
         )
         btn_draw.clicked.connect(self._activate_draw_tool)
         top_bar.addWidget(btn_draw)
 
         btn_invert = QPushButton("⇄ Invert")
+        btn_invert.setToolTip("Reverse profile direction (A ⇄ B)")
+        btn_invert.setStyleSheet("padding: 5px 10px; font-size: 12px;")
         btn_invert.clicked.connect(self._invert_transect)
         top_bar.addWidget(btn_invert)
 
-        top_bar.addStretch()
+        top_bar.addStretch(1)
 
         btn_export_csv = QPushButton("📊 Export CSV")
+        btn_export_csv.setStyleSheet("padding: 5px 10px; font-size: 12px;")
         btn_export_csv.clicked.connect(self._export_csv)
         top_bar.addWidget(btn_export_csv)
 
         btn_export_img = QPushButton("📷 Export PNG")
+        btn_export_img.setStyleSheet("padding: 5px 10px; font-size: 12px;")
         btn_export_img.clicked.connect(self._export_image)
         top_bar.addWidget(btn_export_img)
 

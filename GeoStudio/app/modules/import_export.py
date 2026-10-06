@@ -1,22 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-GeoAnalytica - Data Import / Export Module
+GeoStudio / GeoAnalytica - Data Import / Export Module
 Import/Export: Shapefile, GeoPackage, GeoJSON, CSV, KML, DXF.
 """
 
+import os
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QPushButton,
     QLabel, QComboBox, QGroupBox, QFileDialog, QMessageBox,
     QProgressBar, QCheckBox, QLineEdit, QTabWidget
 )
-from qgis.PyQt.QtCore import Qt
-from qgis.core import (
-    QgsProject, QgsMapLayer, QgsVectorLayer, QgsVectorFileWriter,
-    QgsCoordinateTransformContext, QgsWkbTypes, QgsFields
-)
-import processing
-import os
+from qgis.core import QgsProject, QgsMapLayer, QgsVectorLayer
 from core.style import MODULE_STYLE
+from .io_operations import export_vector_layer, reproject_vector_layer, merge_vector_layers
 
 STYLE = MODULE_STYLE
 
@@ -66,9 +62,6 @@ class ImportExportWidget(QWidget):
         layout.addWidget(tabs)
         self.setLayout(layout)
 
-    # ------------------------------------------------------------------
-    # Import Tab
-    # ------------------------------------------------------------------
     def _build_import_tab(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -96,9 +89,6 @@ class ImportExportWidget(QWidget):
         layout.addStretch()
         return widget
 
-    # ------------------------------------------------------------------
-    # Export Tab
-    # ------------------------------------------------------------------
     def _build_export_tab(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -114,8 +104,7 @@ class ImportExportWidget(QWidget):
         form.addRow("Format:", self.export_format_combo)
 
         self.export_crs_combo = QComboBox()
-        common_crs = ["EPSG:4326 (WGS84)", "EPSG:32636 (UTM 36N)", "EPSG:3857 (Web Mercator)",
-                      "EPSG:32632 (UTM 32N)", "EPSG:4230 (ED50)"]
+        common_crs = ["EPSG:4326 (WGS84)", "EPSG:32636 (UTM 36N)", "EPSG:3857 (Web Mercator)", "EPSG:32632 (UTM 32N)", "EPSG:4230 (ED50)"]
         for crs in common_crs:
             self.export_crs_combo.addItem(crs)
         form.addRow("Output CRS:", self.export_crs_combo)
@@ -136,9 +125,6 @@ class ImportExportWidget(QWidget):
         layout.addStretch()
         return widget
 
-    # ------------------------------------------------------------------
-    # Reproject & Convert Tab
-    # ------------------------------------------------------------------
     def _build_reproject_tab(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -154,10 +140,8 @@ class ImportExportWidget(QWidget):
         btn_reproj = QPushButton("🗺 Reproject Layer")
         btn_reproj.clicked.connect(self._reproject_layer)
         form.addRow(btn_reproj)
-
         layout.addLayout(form)
 
-        # Merge layers
         merge_box = QGroupBox("Merge Vector Layers")
         merge_layout = QVBoxLayout()
         self.merge_layer1 = QComboBox()
@@ -175,58 +159,41 @@ class ImportExportWidget(QWidget):
         layout.addStretch()
         return widget
 
-    # ------------------------------------------------------------------
-    # Refresh
-    # ------------------------------------------------------------------
     def _refresh_layers(self):
-        vector_layers = [
-            l for l in QgsProject.instance().mapLayers().values()
-            if l.type() == QgsMapLayer.VectorLayer
-        ]
+        vector_layers = [l for l in QgsProject.instance().mapLayers().values() if l.type() == QgsMapLayer.VectorLayer]
         all_layers = list(QgsProject.instance().mapLayers().values())
 
-        for combo in (self.export_layer_combo, self.reproj_layer_combo,
-                      self.merge_layer1, self.merge_layer2):
+        for combo in (self.export_layer_combo, self.reproj_layer_combo, self.merge_layer1, self.merge_layer2):
             current = combo.currentText()
             combo.clear()
             combo.addItem("-- None --", None)
             source = vector_layers if combo in (self.export_layer_combo, self.merge_layer1, self.merge_layer2) else all_layers
-            for l in (vector_layers if combo in (self.export_layer_combo,
-                                                 self.merge_layer1, self.merge_layer2) else all_layers):
+            for l in source:
                 combo.addItem(l.name(), l.id())
             idx = combo.findText(current)
             if idx >= 0:
                 combo.setCurrentIndex(idx)
 
-    # ------------------------------------------------------------------
-    # Actions
-    # ------------------------------------------------------------------
     def _import_vector(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Import Vector Layer", "",
-            "Vector (*.shp *.gpkg *.geojson *.json *.kml *.gml *.csv *.tab);;All (*)"
-        )
+        path, _ = QFileDialog.getOpenFileName(self, "Import Vector Layer", "", "Vector (*.shp *.gpkg *.geojson *.json *.kml *.gml *.csv *.tab);;All (*)")
         if path:
             name = os.path.splitext(os.path.basename(path))[0]
             layer = QgsVectorLayer(path, name, "ogr")
             if layer.isValid():
                 QgsProject.instance().addMapLayer(layer)
-                self.iface.messageBar().pushSuccess("GeoAnalytica", f"Imported: {name}")
+                if self.iface: self.iface.messageBar().pushSuccess("GeoAnalytica", f"Imported: {name}")
             else:
                 QMessageBox.critical(self, "Import Error", f"Could not load: {path}")
 
     def _import_raster(self):
         from qgis.core import QgsRasterLayer
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Import Raster Layer", "",
-            "Raster (*.tif *.tiff *.img *.asc *.nc *.hdf *.vrt);;All (*)"
-        )
+        path, _ = QFileDialog.getOpenFileName(self, "Import Raster Layer", "", "Raster (*.tif *.tiff *.img *.asc *.nc *.hdf *.vrt);;All (*)")
         if path:
             name = os.path.splitext(os.path.basename(path))[0]
             layer = QgsRasterLayer(path, name)
             if layer.isValid():
                 QgsProject.instance().addMapLayer(layer)
-                self.iface.messageBar().pushSuccess("GeoAnalytica", f"Imported: {name}")
+                if self.iface: self.iface.messageBar().pushSuccess("GeoAnalytica", f"Imported: {name}")
             else:
                 QMessageBox.critical(self, "Import Error", f"Could not load: {path}")
 
@@ -234,19 +201,15 @@ class ImportExportWidget(QWidget):
         path, _ = QFileDialog.getOpenFileName(self, "Import CSV", "", "CSV Files (*.csv);;All (*)")
         if not path:
             return
-        x_field = self.csv_x.text().strip()
-        y_field = self.csv_y.text().strip()
-        uri = (f"file:///{path}?delimiter=,&xField={x_field}&yField={y_field}"
-               f"&crs=epsg:4326&useHeader=yes")
+        x_field, y_field = self.csv_x.text().strip(), self.csv_y.text().strip()
+        uri = f"file:///{path}?delimiter=,&xField={x_field}&yField={y_field}&crs=epsg:4326&useHeader=yes"
         name = os.path.splitext(os.path.basename(path))[0]
         layer = QgsVectorLayer(uri, name, "delimitedtext")
         if layer.isValid():
             QgsProject.instance().addMapLayer(layer)
-            self.iface.messageBar().pushSuccess("GeoAnalytica", f"Imported CSV as points: {name}")
+            if self.iface: self.iface.messageBar().pushSuccess("GeoAnalytica", f"Imported CSV as points: {name}")
         else:
-            QMessageBox.critical(self, "CSV Import Error",
-                f"Could not load CSV.\nMake sure X/Y field names match columns in the file.\n"
-                f"X={x_field}, Y={y_field}")
+            QMessageBox.critical(self, "CSV Import Error", f"Could not load CSV. Verify X/Y column names (X={x_field}, Y={y_field}).")
 
     def _export_layer(self):
         layer_id = self.export_layer_combo.currentData()
@@ -260,41 +223,22 @@ class ImportExportWidget(QWidget):
         driver_name, ext_filter = FORMAT_MAP[fmt_label]
         ext = ext_filter.replace("*", "")
 
-        path, _ = QFileDialog.getSaveFileName(
-            self, f"Export as {fmt_label}", layer.name() + ext,
-            f"{fmt_label} ({ext_filter})"
-        )
+        path, _ = QFileDialog.getSaveFileName(self, f"Export as {fmt_label}", layer.name() + ext, f"{fmt_label} ({ext_filter})")
         if not path:
             return
 
         crs_str = self.export_crs_combo.currentText().split(" ")[0]
-        from qgis.core import QgsCoordinateReferenceSystem
-        dest_crs = QgsCoordinateReferenceSystem(crs_str)
-
-        options = QgsVectorFileWriter.SaveVectorOptions()
-        options.driverName = driver_name
-        options.fileEncoding = "UTF-8"
-        options.ct = None
-        if self.export_selected_only.isChecked():
-            options.onlySelectedFeatures = True
-
         self.export_progress.setValue(30)
         self.export_progress.setFormat("Exporting...")
 
-        error, err_msg, _, _ = QgsVectorFileWriter.writeAsVectorFormatV3(
-            layer, path, QgsCoordinateTransformContext(), options
-        )
-
-        if error == QgsVectorFileWriter.NoError:
+        ok, err_msg = export_vector_layer(layer, path, driver_name, crs_str, self.export_selected_only.isChecked())
+        if ok:
             self.export_progress.setValue(100)
             self.export_progress.setFormat("✓ Done")
-            self.iface.messageBar().pushSuccess(
-                "GeoAnalytica", f"Exported: {os.path.basename(path)}"
-            )
+            if self.iface: self.iface.messageBar().pushSuccess("GeoAnalytica", f"Exported: {os.path.basename(path)}")
         else:
             self.export_progress.setFormat("Error")
-            QMessageBox.critical(self, "Export Error",
-                f"Export failed:\n{err_msg}")
+            QMessageBox.critical(self, "Export Error", f"Export failed:\n{err_msg}")
 
     def _reproject_layer(self):
         layer_id = self.reproj_layer_combo.currentData()
@@ -303,30 +247,21 @@ class ImportExportWidget(QWidget):
         layer = QgsProject.instance().mapLayer(layer_id)
         crs = self.reproj_crs.text().strip()
         try:
-            params = {"INPUT": layer, "TARGET_CRS": crs, "OUTPUT": "memory:"}
-            result = processing.run("native:reprojectlayer", params)
-            out = result.get("OUTPUT")
-            if out:
-                out.setName(f"{layer.name()}_{crs.replace(':', '_')}")
-                QgsProject.instance().addMapLayer(out)
+            out = reproject_vector_layer(layer, crs)
+            if out and self.iface:
                 self.iface.messageBar().pushSuccess("GeoAnalytica", f"Reprojected to {crs}")
         except Exception as e:
             QMessageBox.critical(self, "Reproject Error", str(e))
 
     def _merge_layers(self):
-        id1 = self.merge_layer1.currentData()
-        id2 = self.merge_layer2.currentData()
+        id1, id2 = self.merge_layer1.currentData(), self.merge_layer2.currentData()
         if not id1 or not id2:
             QMessageBox.warning(self, "No Layers", "Select two layers to merge."); return
         l1 = QgsProject.instance().mapLayer(id1)
         l2 = QgsProject.instance().mapLayer(id2)
         try:
-            params = {"LAYERS": [l1, l2], "CRS": None, "OUTPUT": "memory:"}
-            result = processing.run("native:mergevectorlayers", params)
-            out = result.get("OUTPUT")
-            if out:
-                out.setName(f"{l1.name()}_{l2.name()}_merged")
-                QgsProject.instance().addMapLayer(out)
+            out = merge_vector_layers(l1, l2)
+            if out and self.iface:
                 self.iface.messageBar().pushSuccess("GeoAnalytica", "Layers merged!")
         except Exception as e:
             QMessageBox.critical(self, "Merge Error", str(e))

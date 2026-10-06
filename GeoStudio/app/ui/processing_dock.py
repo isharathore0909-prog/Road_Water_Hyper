@@ -4,19 +4,15 @@ GeoStudio - Pure QGIS Processing Toolbox Dock Widget
 Single hierarchical collapsible tree panel without horizontal tab strips.
 """
 
-from typing import Dict, Any, Optional
-
 from PyQt5.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QTreeWidget, QTreeWidgetItem, QPushButton, QToolButton,
-    QHeaderView, QMessageBox
+    QLineEdit, QTreeWidget, QTreeWidgetItem, QToolButton, QMessageBox
 )
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont, QIcon, QColor
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont, QColor
 
 from core.processing.algorithm_registry import AlgorithmRegistry, AlgorithmDefinition
-from .algorithm_dialog import QgisAlgorithmDialog
-from core.style import MODULE_STYLE
+from app.ui.processing_launcher import launch_algorithm
 
 
 class ProcessingToolboxTree(QWidget):
@@ -40,26 +36,14 @@ class ProcessingToolboxTree(QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
-        # ── Search & Filter Toolbar ───────────────────────────
+        # Search & Filter Toolbar
         search_box = QHBoxLayout()
         search_box.setSpacing(4)
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("🔎 Search algorithms...")
         self.search_edit.setClearButtonEnabled(True)
-        self.search_edit.setStyleSheet("""
-            QLineEdit {
-                background: #ffffff;
-                color: #0f172a;
-                border: 1px solid #cbd5e1;
-                border-radius: 4px;
-                padding: 5px 8px;
-                font-size: 11px;
-            }
-            QLineEdit:focus {
-                border-color: #0f172a;
-            }
-        """)
+        self.search_edit.setStyleSheet("QLineEdit { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 4px; padding: 5px 8px; font-size: 11px; } QLineEdit:focus { border-color: #0f172a; }")
         self.search_edit.textChanged.connect(self._filter_tree)
         search_box.addWidget(self.search_edit)
 
@@ -79,57 +63,21 @@ class ProcessingToolboxTree(QWidget):
 
         layout.addLayout(search_box)
 
-        # ── QGIS Hierarchical Algorithm Tree ──────────────────
+        # QGIS Hierarchical Algorithm Tree
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
         self.tree.setAnimated(True)
         self.tree.setIndentation(16)
         self.tree.setStyleSheet("""
-            QTreeWidget {
-                background: #ffffff;
-                color: #0f172a;
-                border: 1px solid #e2e8f0;
-                border-radius: 4px;
-                font-size: 11px;
-                outline: none;
-                selection-background-color: #e2e8f0;
-                selection-color: #0f172a;
-            }
-            QTreeWidget::branch {
-                background: transparent;
-            }
-            QTreeWidget::branch:selected {
-                background: #e2e8f0;
-            }
-            QTreeWidget::branch:hover:!selected {
-                background: #f8fafc;
-            }
-            QTreeWidget::item {
-                padding: 4px 6px;
-                border-radius: 3px;
-            }
-            QTreeWidget::item:selected {
-                background: #e2e8f0;
-                color: #0f172a;
-                font-weight: 600;
-            }
-            QTreeWidget::item:hover:!selected {
-                background: #f8fafc;
-            }
-            QToolTip {
-                background-color: #ffffff;
-                color: #0f172a;
-                border: 1px solid #cbd5e1;
-                border-radius: 4px;
-                padding: 6px 10px;
-                font-size: 11px;
-                font-family: "Segoe UI", "Inter", "Arial", sans-serif;
-            }
+            QTreeWidget { background: #ffffff; color: #0f172a; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 11px; outline: none; selection-background-color: #e2e8f0; selection-color: #0f172a; }
+            QTreeWidget::branch { background: transparent; }
+            QTreeWidget::item { padding: 4px 6px; border-radius: 3px; }
+            QTreeWidget::item:selected { background: #e2e8f0; color: #0f172a; font-weight: 600; }
+            QTreeWidget::item:hover:!selected { background: #f8fafc; }
         """)
         self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
         layout.addWidget(self.tree)
 
-        # Bottom algorithm count
         all_algos = AlgorithmRegistry.get_all_algorithms()
         self.count_label = QLabel(f"Total: {len(all_algos)} algorithms available")
         self.count_label.setStyleSheet("color: #64748b; font-size: 10px; padding: 2px;")
@@ -140,14 +88,12 @@ class ProcessingToolboxTree(QWidget):
     def _populate_tree(self):
         self.tree.clear()
 
-        # Recently used group at top
         self.recent_group = QTreeWidgetItem(self.tree)
         self.recent_group.setText(0, "🕒 Recently Used")
         self.recent_group.setFont(0, QFont("Segoe UI", 9, QFont.Bold))
         self.recent_group.setForeground(0, QColor("#0f172a"))
         self.recent_group.setHidden(len(self._recently_used) == 0)
 
-        # Build full multi-level hierarchy
         for cat in AlgorithmRegistry.HIERARCHY:
             cat_item = QTreeWidgetItem(self.tree)
             total_cat_items = sum(len(sub["items"]) for sub in cat["subcategories"])
@@ -165,11 +111,10 @@ class ProcessingToolboxTree(QWidget):
                     item = QTreeWidgetItem(sub_item)
                     gpu_badge = "⚡ " if algo.supports_gpu else ""
                     item.setText(0, f"⚙  {algo.name} {gpu_badge}")
-                    item.setToolTip(0, f"{algo.name}\n\n{algo.description}\nAlgorithm ID: {algo.algo_id}\nHardware: {'CUDA GPU Acceleration Supported' if algo.supports_gpu else 'CPU'}")
+                    item.setToolTip(0, f"{algo.name}\n\n{algo.description}\nAlgorithm ID: {algo.algo_id}")
                     item.setData(0, Qt.UserRole, algo)
 
         self.tree.collapseAll()
-        # Expand first category (Vector) by default
         if self.tree.topLevelItemCount() > 1:
             self.tree.topLevelItem(1).setExpanded(True)
 
@@ -180,10 +125,7 @@ class ProcessingToolboxTree(QWidget):
         if not query:
             for i in range(self.tree.topLevelItemCount()):
                 cat = self.tree.topLevelItem(i)
-                if cat == self.recent_group:
-                    cat.setHidden(len(self._recently_used) == 0)
-                else:
-                    cat.setHidden(False)
+                cat.setHidden(len(self._recently_used) == 0 if cat == self.recent_group else False)
                 for j in range(cat.childCount()):
                     sub = cat.child(j)
                     sub.setHidden(False)
@@ -196,19 +138,14 @@ class ProcessingToolboxTree(QWidget):
         for i in range(self.tree.topLevelItemCount()):
             cat = self.tree.topLevelItem(i)
             cat_has_match = False
-
             for j in range(cat.childCount()):
                 sub = cat.child(j)
                 sub_has_match = False
-
                 for k in range(sub.childCount()):
                     child = sub.child(k)
                     algo_data = child.data(0, Qt.UserRole)
                     if isinstance(algo_data, AlgorithmDefinition):
-                        name_m = query in algo_data.name.lower()
-                        desc_m = query in algo_data.description.lower()
-                        id_m = query in algo_data.algo_id.lower()
-                        matches = name_m or desc_m or id_m
+                        matches = query in algo_data.name.lower() or query in algo_data.description.lower() or query in algo_data.algo_id.lower()
                     else:
                         matches = query in child.text(0).lower()
 
@@ -239,7 +176,6 @@ class ProcessingToolboxTree(QWidget):
         if not algo or not isinstance(algo, AlgorithmDefinition):
             item.setExpanded(not item.isExpanded())
             return
-
         self._add_to_recent(algo)
         self.launch_algorithm_dialog(algo)
 
@@ -263,32 +199,7 @@ class ProcessingToolboxTree(QWidget):
         self.recent_group.setExpanded(True)
 
     def launch_algorithm_dialog(self, algo: AlgorithmDefinition):
-        """Open universal QGIS algorithm parameter dialog."""
-        # Handle special direct tools (Measure, Attribute Table, Map Grid)
-        if algo.dialog_type == "open_attribute_table":
-            if self.main_window:
-                self.main_window.open_attribute_table()
-            return
-        elif algo.dialog_type == "dem_dialog":
-            if self.main_window:
-                self.main_window.open_dem_elevation_dialog()
-            return
-        elif algo.dialog_type in ("io_import_vector", "io_import_raster", "io_import_csv"):
-            if self.main_window:
-                if algo.dialog_type == "io_import_vector": self.main_window.add_vector()
-                elif algo.dialog_type == "io_import_raster": self.main_window.add_raster()
-                elif algo.dialog_type == "io_import_csv": self.main_window.add_csv()
-            return
-        elif algo.dialog_type == "tools_measure":
-            QMessageBox.information(self, "Measure Tool", "Click points on the Map Canvas to measure distance and polygon area.")
-            return
-        elif algo.dialog_type == "tools_coord":
-            QMessageBox.information(self, "Coordinate Capture", "Click anywhere on the map canvas to view coordinates and CRS info.")
-            return
-
-        # Open Universal QGIS Algorithm Dialog
-        dlg = QgisAlgorithmDialog(algo, map_canvas=self.map_canvas, parent=self)
-        dlg.exec_()
+        launch_algorithm(algo, map_canvas=self.map_canvas, main_window=self.main_window, parent=self)
 
 
 class ProcessingDock(QDockWidget):
@@ -323,7 +234,6 @@ class ProcessingDock(QDockWidget):
         if algo:
             self.tree_widget.launch_algorithm_dialog(algo)
         else:
-            # Try fuzzy match by name
             for a in AlgorithmRegistry.get_all_algorithms():
                 if algo_id_or_name.lower() in a.name.lower():
                     self.tree_widget.launch_algorithm_dialog(a)
@@ -333,13 +243,12 @@ class ProcessingDock(QDockWidget):
     def open_tab(self, tab_name: str):
         """Backward compatibility for menu actions."""
         self.show()
-        if tab_name == "spatial":
-            self.open_algorithm("native:buffer")
-        elif tab_name == "raster":
-            self.open_algorithm("native:slope")
-        elif tab_name == "satellite":
-            self.open_algorithm("satellite:ndvi")
-        elif tab_name == "io":
-            self.open_algorithm("native:import_vector")
-        elif tab_name == "tools":
-            self.open_algorithm("native:measure_dist")
+        tab_map = {
+            "spatial": "native:buffer",
+            "raster": "native:slope",
+            "satellite": "satellite:ndvi",
+            "io": "native:import_vector",
+            "tools": "native:measure_dist"
+        }
+        target = tab_map.get(tab_name, "native:slope")
+        self.open_algorithm(target)

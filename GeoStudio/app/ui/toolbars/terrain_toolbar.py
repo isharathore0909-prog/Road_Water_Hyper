@@ -77,6 +77,7 @@ class TerrainToolBar(QToolBar):
             ("view_3d", "3D View", self.mw.open_3d_viewer, "Interactive 3D Elevation Viewer"),
             ("profile", "Profile", self.mw.open_elevation_profile, "Elevation Profile Tool"),
             ("viewshed", "Viewshed", self.mw.open_viewshed, "Line of Sight & Viewshed Analysis"),
+            ("profile", "Volumetrics", self.mw.open_volumetric_analysis, "Volumetric Analysis & Stage-Storage Capacity"),
             ("cut_fill", "Cut/Fill", self.mw.open_cut_fill, "Cut / Fill Earthwork Volume"),
             ("watershed", "Watershed", self.mw.open_hydro_watershed, "Watershed Drainage Basin"),
         ]

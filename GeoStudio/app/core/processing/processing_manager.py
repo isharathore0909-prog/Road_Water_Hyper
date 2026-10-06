@@ -102,7 +102,7 @@ class ProcessingManager:
         ds_out.SetProjection(projection)
 
         # 5. Halo requirements for 3x3 algorithms
-        halo = 1 if algo_name in ("slope", "aspect", "hillshade", "tri", "twi", "focal") else 0
+        halo = 1 if algo_name in ("slope", "aspect", "hillshade", "tri", "tpi", "twi", "curvature", "focal") else 0
         windows = list(TileManager.generate_windows(raster_w, raster_h, tile_w, tile_h, halo=halo))
         total_tiles = len(windows)
         log(f"Processing total of <b>{total_tiles}</b> tiles...")
@@ -124,7 +124,7 @@ class ProcessingManager:
             out_tile = None
             if use_gpu:
                 try:
-                    if algo_name in ("slope", "aspect", "hillshade", "tri"):
+                    if algo_name in ("slope", "aspect", "hillshade", "tri", "tpi", "twi", "curvature"):
                         out_tile = CudaKernels.compute_slope_aspect_hillshade(
                             dem_tile=tile_data,
                             cellsize_x=cellsize_x,

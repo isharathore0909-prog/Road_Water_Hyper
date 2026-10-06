@@ -6,21 +6,22 @@ title, scale bar, and north arrow overlays.
 """
 
 import os
-import subprocess
 from PyQt5.QtWidgets import (
-    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QComboBox, QSpinBox, QCheckBox, QLineEdit,
-    QFileDialog, QMessageBox, QGroupBox, QFormLayout, QRadioButton,
-    QButtonGroup, QProgressBar
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QComboBox, QCheckBox, QLineEdit,
+    QFileDialog, QMessageBox, QGroupBox, QFormLayout,
+    QProgressBar, QApplication
 )
-from PyQt5.QtCore import Qt, QSize, QRectF, QPointF
-from PyQt5.QtGui import (
-    QImage, QPainter, QColor, QFont, QPen, QBrush, QPixmap
-)
+from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtGui import QImage, QPainter, QColor, QPen
 
 from qgis.core import (
-    QgsProject, QgsMapSettings, QgsMapRendererCustomPainterJob,
-    QgsRectangle, QgsDistanceArea
+    QgsProject, QgsMapSettings, QgsMapRendererCustomPainterJob
+)
+from app.ui.print_export_overlays import (
+    draw_title_overlay,
+    draw_north_arrow_overlay,
+    draw_scalebar_overlay
 )
 
 
@@ -42,7 +43,7 @@ class PrintExportDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        # ── Group 1: Output Format & Dimensions ────────────
+        # Output Settings
         grp_output = QGroupBox("Output Settings")
         form_output = QFormLayout(grp_output)
         form_output.setSpacing(8)
@@ -65,7 +66,7 @@ class PrintExportDialog(QDialog):
 
         self.combo_dpi = QComboBox()
         self.combo_dpi.addItems(["96 DPI (Screen / Fast)", "150 DPI (Draft Print)", "300 DPI (High-Res Production)", "600 DPI (Ultra-Fine)"])
-        self.combo_dpi.setCurrentIndex(2)  # Default 300 DPI
+        self.combo_dpi.setCurrentIndex(2)
         self.combo_dpi.currentIndexChanged.connect(self._update_dimensions_info)
         form_output.addRow("Resolution (DPI):", self.combo_dpi)
 
@@ -75,7 +76,7 @@ class PrintExportDialog(QDialog):
 
         layout.addWidget(grp_output)
 
-        # ── Group 2: Layout & Decoration Elements ─────────
+        # Map Elements & Overlays
         grp_decor = QGroupBox("Map Elements & Overlays")
         form_decor = QFormLayout(grp_decor)
         form_decor.setSpacing(8)
@@ -100,20 +101,18 @@ class PrintExportDialog(QDialog):
 
         layout.addWidget(grp_decor)
 
-        # Progress bar
         self.progress = QProgressBar()
         self.progress.setTextVisible(False)
         self.progress.hide()
         layout.addWidget(self.progress)
 
-        # ── Buttons ───────────────────────────────────────
+        # Buttons
         btn_box = QHBoxLayout()
         btn_box.setSpacing(10)
 
         btn_cancel = QPushButton("Cancel")
         btn_cancel.clicked.connect(self.reject)
         btn_box.addWidget(btn_cancel)
-
         btn_box.addStretch()
 
         btn_export = QPushButton("🚀 Export & Save Map")
@@ -145,7 +144,6 @@ class PrintExportDialog(QDialog):
         elif "4K Ultra HD" in preset:
             return 3840, 2160
         else:
-            # Current Map View scaled to DPI
             canvas = self.mw.map_canvas.canvas
             base_w = canvas.width() if canvas else 1200
             base_h = canvas.height() if canvas else 800
@@ -161,14 +159,11 @@ class PrintExportDialog(QDialog):
     def _do_export(self):
         fmt_idx = self.combo_format.currentIndex()
         if fmt_idx == 0:
-            filt = "PNG Image (*.png)"
-            ext = ".png"
+            filt, ext = "PNG Image (*.png)", ".png"
         elif fmt_idx == 1:
-            filt = "JPEG Image (*.jpg)"
-            ext = ".jpg"
+            filt, ext = "JPEG Image (*.jpg)", ".jpg"
         else:
-            filt = "PDF Document (*.pdf)"
-            ext = ".pdf"
+            filt, ext = "PDF Document (*.pdf)", ".pdf"
 
         path, _ = QFileDialog.getSaveFileName(self, "Export Map Layout", f"GeoStudio_Map{ext}", filt)
         if not path:
@@ -187,7 +182,6 @@ class PrintExportDialog(QDialog):
             extent = canvas.extent()
             layers = [l for l in QgsProject.instance().mapLayers().values() if l.isValid()]
 
-            # Configure MapSettings
             settings = QgsMapSettings()
             settings.setLayers(layers)
             settings.setDestinationCrs(dest_crs)
@@ -196,7 +190,6 @@ class PrintExportDialog(QDialog):
             settings.setOutputDpi(dpi)
             settings.setBackgroundColor(QColor("#ffffff"))
 
-            # Render map to QImage
             image = QImage(QSize(w, h), QImage.Format_ARGB32_Premultiplied)
             image.fill(QColor("#ffffff"))
 
@@ -207,15 +200,14 @@ class PrintExportDialog(QDialog):
             job.start()
             job.waitForFinished()
 
-            # ── Draw Overlays (Title, North Arrow, Scale Bar) ──
             if self.chk_title.isChecked() and self.txt_title.text().strip():
-                self._draw_title_overlay(p, w, h, self.txt_title.text().strip())
+                draw_title_overlay(p, w, h, self.txt_title.text().strip())
 
             if self.chk_north_arrow.isChecked():
-                self._draw_north_arrow_overlay(p, w, h)
+                draw_north_arrow_overlay(p, w, h)
 
             if self.chk_scalebar.isChecked():
-                self._draw_scalebar_overlay(p, w, h, extent, dest_crs)
+                draw_scalebar_overlay(p, w, h, extent, dest_crs)
 
             if self.chk_border.isChecked():
                 p.setPen(QPen(QColor("#0f172a"), max(2, int(w / 1000))))
@@ -224,7 +216,6 @@ class PrintExportDialog(QDialog):
 
             p.end()
 
-            # Save file
             if ext == ".pdf":
                 from PyQt5.QtGui import QPdfWriter
                 from PyQt5.QtCore import QSizeF
@@ -241,8 +232,7 @@ class PrintExportDialog(QDialog):
             self.mw.geo_status.showMessage(f"Map successfully exported to {os.path.basename(path)}", 5000)
 
             reply = QMessageBox.information(
-                self,
-                "Export Complete",
+                self, "Export Complete",
                 f"Map layout successfully exported to:\n{path}\n\nWould you like to open the exported file?",
                 QMessageBox.Yes | QMessageBox.No
             )
@@ -253,99 +243,3 @@ class PrintExportDialog(QDialog):
         except Exception as e:
             self.progress.hide()
             QMessageBox.critical(self, "Export Failed", f"An error occurred while exporting map:\n{e}")
-
-    def _draw_title_overlay(self, painter, w, h, title):
-        title_font_size = max(12, int(h / 36))
-        painter.setFont(QFont("Segoe UI", title_font_size, QFont.Bold))
-        margin = int(w * 0.02)
-        box_h = int(title_font_size * 2.2)
-
-        # Background banner
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(QColor(255, 255, 255, 220)))
-        painter.drawRoundedRect(QRectF(margin, margin, w * 0.45, box_h), 6, 6)
-
-        # Border
-        painter.setPen(QPen(QColor("#cbd5e1"), 1.5))
-        painter.setBrush(Qt.NoBrush)
-        painter.drawRoundedRect(QRectF(margin, margin, w * 0.45, box_h), 6, 6)
-
-        # Title text
-        painter.setPen(QColor("#0f172a"))
-        painter.drawText(QRectF(margin + 12, margin, w * 0.45 - 24, box_h), Qt.AlignVCenter | Qt.AlignLeft, title)
-
-    def _draw_north_arrow_overlay(self, painter, w, h):
-        size = max(40, int(w * 0.04))
-        margin_x = w - size - int(w * 0.03)
-        margin_y = int(h * 0.03)
-
-        # Background circle
-        painter.setPen(QPen(QColor("#94a3b8"), 1))
-        painter.setBrush(QBrush(QColor(255, 255, 255, 220)))
-        painter.drawEllipse(QRectF(margin_x, margin_y, size, size))
-
-        cx = margin_x + size / 2.0
-        cy = margin_y + size / 2.0
-
-        # Draw North Star / Arrow
-        painter.setPen(Qt.NoPen)
-        # North pointer (dark)
-        painter.setBrush(QBrush(QColor("#0f172a")))
-        poly_n = [QPointF(cx, margin_y + size * 0.15), QPointF(cx, cy), QPointF(cx - size * 0.18, cy + size * 0.1)]
-        painter.drawPolygon(poly_n)
-
-        # North pointer right (light)
-        painter.setBrush(QBrush(QColor("#64748b")))
-        poly_nr = [QPointF(cx, margin_y + size * 0.15), QPointF(cx, cy), QPointF(cx + size * 0.18, cy + size * 0.1)]
-        painter.drawPolygon(poly_nr)
-
-        # "N" label
-        painter.setFont(QFont("Segoe UI", max(8, int(size * 0.22)), QFont.Bold))
-        painter.setPen(QColor("#0f172a"))
-        painter.drawText(QRectF(margin_x, margin_y + size * 0.02, size, size * 0.3), Qt.AlignCenter, "N")
-
-    def _draw_scalebar_overlay(self, painter, w, h, extent, crs):
-        da = QgsDistanceArea()
-        da.setSourceCrs(crs, QgsProject.instance().transformContext())
-        da.setEllipsoid("WGS84")
-
-        is_geographic = crs.isGeographic() or (abs(extent.center().x()) <= 180.0 and abs(extent.center().y()) <= 90.0)
-        if is_geographic:
-            lat = math.radians(extent.center().y())
-            meters_per_deg_lon = 111320.0 * math.cos(lat)
-            ground_width_m = extent.width() * meters_per_deg_lon
-        else:
-            from qgis.core import QgsPointXY
-            p1 = extent.center()
-            p2 = QgsPointXY(p1.x() + extent.width(), p1.y())
-            ground_width_m = float(da.measureLine(p1, p2))
-
-        # Estimate scale bar for 20% of map width
-        bar_len_px = int(w * 0.20)
-        bar_len_m = ground_width_m * 0.20
-
-        if bar_len_m >= 1000:
-            val = round(bar_len_m / 1000, 1)
-            lbl = f"{val} km"
-        else:
-            val = round(bar_len_m, -1)
-            lbl = f"{int(val)} m"
-
-        margin_x = int(w * 0.03)
-        margin_y = h - int(h * 0.06)
-
-        # Background box
-        painter.setPen(QPen(QColor("#cbd5e1"), 1))
-        painter.setBrush(QBrush(QColor(255, 255, 255, 220)))
-        painter.drawRoundedRect(QRectF(margin_x - 10, margin_y - 20, bar_len_px + 20, 32), 4, 4)
-
-        # Scale line
-        painter.setPen(QPen(QColor("#0f172a"), 3))
-        painter.drawLine(margin_x, margin_y, margin_x + bar_len_px, margin_y)
-        painter.drawLine(margin_x, margin_y - 5, margin_x, margin_y + 5)
-        painter.drawLine(margin_x + bar_len_px, margin_y - 5, margin_x + bar_len_px, margin_y + 5)
-
-        # Scale text
-        painter.setFont(QFont("Segoe UI", max(8, int(h / 70)), QFont.Bold))
-        painter.setPen(QColor("#0f172a"))
-        painter.drawText(QRectF(margin_x, margin_y - 20, bar_len_px, 16), Qt.AlignCenter, lbl)

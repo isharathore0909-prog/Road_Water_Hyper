@@ -8,13 +8,13 @@ import os
 import numpy as np
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
-    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider,
-    QPushButton, QComboBox, QCheckBox, QGroupBox, QSplitter,
-    QFileDialog, QMessageBox, QFrame, QApplication
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QSplitter, QFileDialog, QMessageBox, QApplication
 )
 
 from .reader import PointCloudReader
 from .canvas import GLPointCloudCanvas
+from .controls import build_3d_side_panel, COLOR_MODE_KEYS
 
 
 class GeoStudio3DViewerWindow(QDialog):
@@ -37,81 +37,19 @@ class GeoStudio3DViewerWindow(QDialog):
         self.resize(1180, 780)
         self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint | Qt.WindowMinimizeButtonHint)
         self.setStyleSheet("""
-            QDialog {
-                background: #f8fafc;
-                color: #0f172a;
-                font-family: "Segoe UI Variable Display", "Segoe UI", "Inter", sans-serif;
-            }
+            QDialog { background: #f8fafc; color: #0f172a; font-family: 'Segoe UI Variable Display', 'Segoe UI', 'Inter', sans-serif; }
             QLabel { color: #334155; font-size: 11px; }
-            QGroupBox {
-                background: #ffffff;
-                border: 1px solid #e2e8f0;
-                border-radius: 6px;
-                color: #0f172a;
-                font-size: 11px;
-                font-weight: bold;
-                margin-top: 12px;
-                padding: 10px 8px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 8px;
-                padding: 0 4px;
-                color: #0284c7;
-            }
-            QPushButton {
-                background: #ffffff;
-                color: #0f172a;
-                border: 1px solid #cbd5e1;
-                border-radius: 5px;
-                padding: 6px 12px;
-                font-weight: 600;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background: #f1f5f9;
-                border-color: #94a3b8;
-            }
-            QPushButton:pressed {
-                background: #e2e8f0;
-            }
-            QComboBox {
-                background: #ffffff;
-                color: #0f172a;
-                border: 1px solid #cbd5e1;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 11px;
-                min-height: 24px;
-            }
-            QComboBox QAbstractItemView {
-                background: #ffffff;
-                color: #0f172a;
-                selection-background-color: #38bdf8;
-                selection-color: #ffffff;
-            }
-            QCheckBox {
-                color: #334155;
-                font-size: 11px;
-                spacing: 6px;
-            }
-            QSlider::groove:horizontal {
-                height: 4px;
-                background: #e2e8f0;
-                border-radius: 2px;
-            }
-            QSlider::sub-page:horizontal {
-                background: #0284c7;
-                border-radius: 2px;
-            }
-            QSlider::handle:horizontal {
-                background: #ffffff;
-                border: 2px solid #0284c7;
-                width: 14px;
-                margin-top: -5px;
-                margin-bottom: -5px;
-                border-radius: 7px;
-            }
+            QGroupBox { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; color: #0f172a; font-size: 11px; font-weight: bold; margin-top: 12px; padding: 10px 8px; }
+            QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; color: #0284c7; }
+            QPushButton { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 5px; padding: 6px 12px; font-weight: 600; font-size: 11px; }
+            QPushButton:hover { background: #f1f5f9; border-color: #94a3b8; }
+            QPushButton:pressed { background: #e2e8f0; }
+            QComboBox { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px; font-size: 11px; min-height: 24px; }
+            QComboBox QAbstractItemView { background: #ffffff; color: #0f172a; selection-background-color: #38bdf8; selection-color: #ffffff; }
+            QCheckBox { color: #334155; font-size: 11px; spacing: 6px; }
+            QSlider::groove:horizontal { height: 4px; background: #e2e8f0; border-radius: 2px; }
+            QSlider::sub-page:horizontal { background: #0284c7; border-radius: 2px; }
+            QSlider::handle:horizontal { background: #ffffff; border: 2px solid #0284c7; width: 14px; margin-top: -5px; margin-bottom: -5px; border-radius: 7px; }
         """)
 
     def _build_ui(self):
@@ -131,7 +69,6 @@ class GeoStudio3DViewerWindow(QDialog):
         self.lbl_dataset = QLabel(f"Dataset: <b>{fname}</b>")
         self.lbl_dataset.setStyleSheet("color: #64748b; font-size: 11px;")
         top_bar.addWidget(self.lbl_dataset)
-
         top_bar.addStretch()
 
         btn_top = QPushButton("Top View (2D)")
@@ -154,104 +91,12 @@ class GeoStudio3DViewerWindow(QDialog):
 
         # Main Splitter
         splitter = QSplitter(Qt.Horizontal)
-
         self.canvas = GLPointCloudCanvas(self)
         splitter.addWidget(self.canvas)
 
-        side_panel = QWidget()
-        side_panel.setFixedWidth(280)
-        side_layout = QVBoxLayout(side_panel)
-        side_layout.setContentsMargins(6, 0, 0, 0)
-        side_layout.setSpacing(10)
-
-        # Group: 3D Symbology & Color
-        grp_sym = QGroupBox("🎨 3D Color Symbology")
-        vbox_sym = QVBoxLayout(grp_sym)
-        vbox_sym.setSpacing(8)
-
-        vbox_sym.addWidget(QLabel("Color Palette:"))
-        self.combo_color = QComboBox()
-        self.combo_color.addItems([
-            "RGB (True Color)",
-            "Elevation (Turbo Ramp)",
-            "Classification (ASPRS)",
-            "Intensity (Laser Return)"
-        ])
-        self.combo_color.currentIndexChanged.connect(self._on_color_mode_changed)
-        vbox_sym.addWidget(self.combo_color)
-
-        vbox_sym.addWidget(QLabel("Point Size (px):"))
-        self.slider_psize = QSlider(Qt.Horizontal)
-        self.slider_psize.setRange(1, 12)
-        self.slider_psize.setValue(4)
-        self.slider_psize.valueChanged.connect(lambda v: self.canvas.set_point_size(float(v)))
-        vbox_sym.addWidget(self.slider_psize)
-
-        vbox_sym.addWidget(QLabel("Z-Exaggeration (1.0x - 8.0x):"))
-        self.slider_exag = QSlider(Qt.Horizontal)
-        self.slider_exag.setRange(10, 80)
-        self.slider_exag.setValue(15)
-        self.slider_exag.valueChanged.connect(lambda v: self.canvas.set_z_exaggeration(v / 10.0))
-        vbox_sym.addWidget(self.slider_exag)
-
-        side_layout.addWidget(grp_sym)
-
-        # Group: Environment & Guides
-        grp_env = QGroupBox("🌐 3D Environment")
-        vbox_env = QVBoxLayout(grp_env)
-        vbox_env.setSpacing(8)
-
-        self.chk_grid = QCheckBox("Show Ground Plane Grid")
-        self.chk_grid.setChecked(True)
-        self.chk_grid.toggled.connect(lambda checked: setattr(self.canvas, 'show_grid', checked) or self.canvas.update())
-        vbox_env.addWidget(self.chk_grid)
-
-        self.chk_bbox = QCheckBox("Show 3D Bounding Box")
-        self.chk_bbox.setChecked(True)
-        self.chk_bbox.toggled.connect(lambda checked: setattr(self.canvas, 'show_bbox', checked) or self.canvas.update())
-        vbox_env.addWidget(self.chk_bbox)
-
-        vbox_env.addWidget(QLabel("Background Theme:"))
-        self.combo_theme = QComboBox()
-        self.combo_theme.addItems(["Dark Slate", "Studio Gray", "Sky Blue", "Clean White"])
-        self.combo_theme.currentTextChanged.connect(self.canvas.set_background_theme)
-        vbox_env.addWidget(self.combo_theme)
-
-        side_layout.addWidget(grp_env)
-
-        # Group: Dataset Telemetry
-        grp_info = QGroupBox("📊 3D Point Statistics")
-        vbox_info = QVBoxLayout(grp_info)
-        vbox_info.setSpacing(6)
-
-        self.lbl_points = QLabel("Points Rendered: <b>Loading...</b>")
-        vbox_info.addWidget(self.lbl_points)
-
-        self.lbl_zrange = QLabel("Elevation Range: <b>──</b>")
-        vbox_info.addWidget(self.lbl_zrange)
-
-        self.lbl_fps = QLabel("GPU Render Rate: <b>60 FPS</b>")
-        self.lbl_fps.setStyleSheet("color: #16a34a; font-weight: bold;")
-        vbox_info.addWidget(self.lbl_fps)
-
-        side_layout.addWidget(grp_info)
-        side_layout.addStretch()
-
-        # Instructions
-        nav_box = QFrame()
-        nav_box.setStyleSheet("background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px;")
-        vbox_nav = QVBoxLayout(nav_box)
-        vbox_nav.setContentsMargins(4, 4, 4, 4)
-        vbox_nav.setSpacing(4)
-        lbl_help_title = QLabel("🖱 <b>3D Navigation Controls</b>")
-        lbl_help_title.setStyleSheet("color: #0284c7; font-size: 11px;")
-        vbox_nav.addWidget(lbl_help_title)
-        vbox_nav.addWidget(QLabel("• <b>Left Drag:</b> Orbit / Rotate Camera"))
-        vbox_nav.addWidget(QLabel("• <b>Middle / Shift+Left:</b> Pan 3D View"))
-        vbox_nav.addWidget(QLabel("• <b>Wheel / Right Drag:</b> Smooth Zoom"))
-        side_layout.addWidget(nav_box)
-
+        side_panel = build_3d_side_panel(self)
         splitter.addWidget(side_panel)
+
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 0)
         main_layout.addWidget(splitter, 1)
@@ -264,10 +109,14 @@ class GeoStudio3DViewerWindow(QDialog):
         try:
             QApplication.setOverrideCursor(Qt.WaitCursor)
             res = PointCloudReader.load_las_points(self.file_path, max_points=1200000)
-            pts_xyz, rgb, z_col, class_col, int_col, center, z_min, z_max, total_pts = res
+            if len(res) >= 10:
+                pts_xyz, rgb, z_col, class_col, int_col, center, z_min, z_max, total_pts, color_dict = res
+            else:
+                pts_xyz, rgb, z_col, class_col, int_col, center, z_min, z_max, total_pts = res
+                color_dict = {}
 
             self.pts_xyz = pts_xyz
-            self.canvas.set_point_data(pts_xyz, rgb, z_col, class_col, int_col, mode="auto")
+            self.canvas.set_point_data(pts_xyz, rgb, z_col, class_col, int_col, mode="auto", color_dict=color_dict)
 
             rendered_count = len(pts_xyz)
             self.lbl_points.setText(f"Points in 3D: <b>{rendered_count:,}</b> (of {total_pts:,})")
@@ -284,9 +133,8 @@ class GeoStudio3DViewerWindow(QDialog):
             QApplication.restoreOverrideCursor()
 
     def _on_color_mode_changed(self, idx: int):
-        modes = ["RGB", "Elevation", "Classification", "Intensity"]
-        if 0 <= idx < len(modes):
-            self.canvas.set_color_mode(modes[idx])
+        if 0 <= idx < len(COLOR_MODE_KEYS):
+            self.canvas.set_color_mode(COLOR_MODE_KEYS[idx])
 
     def _export_screenshot(self):
         path, _ = QFileDialog.getSaveFileName(

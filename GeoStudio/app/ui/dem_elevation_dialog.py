@@ -7,78 +7,16 @@ Provides full Global Mapper & ArcGIS style elevation styling controls.
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
     QPushButton, QComboBox, QDoubleSpinBox, QCheckBox,
-    QTabWidget, QWidget, QGroupBox, QSlider, QDialogButtonBox,
-    QMessageBox, QFrame, QGridLayout
+    QTabWidget, QWidget, QGroupBox, QSlider, QMessageBox
 )
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor, QPainter, QBrush, QPen, QLinearGradient
-
 from qgis.core import QgsProject, QgsRasterLayer, QgsMapLayer
 from core.elevation_styler import ElevationStyler, ELEVATION_PRESETS
-
-
-DIALOG_STYLE = """
-    QDialog { background: #f8fafc; color: #1e293b; font-size: 12px; }
-    QGroupBox { font-weight: bold; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 6px; margin-top: 16px; padding-top: 6px; background: #ffffff; }
-    QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 8px; padding: 0 4px; background: #ffffff; color: #0f172a; }
-    QTabWidget::pane { border: 1px solid #cbd5e1; background: #ffffff; border-radius: 6px; top: -1px; }
-    QTabWidget::tab-bar { left: 6px; }
-    QTabBar::tab { background: #f1f5f9; color: #64748b; padding: 7px 18px; border: 1px solid #cbd5e1; border-top-left-radius: 5px; border-top-right-radius: 5px; margin-right: 4px; margin-top: 2px; min-width: 68px; }
-    QTabBar::tab:selected { background: #ffffff; color: #0f172a; font-weight: bold; border-bottom: 1px solid #ffffff; margin-top: 0px; }
-    QTabBar::tab:hover:!selected { background: #e2e8f0; color: #1e293b; }
-    QPushButton { background: #0f172a; color: white; border: none; border-radius: 4px; padding: 7px 16px; font-weight: bold; }
-    QPushButton:hover { background: #1e293b; }
-    QPushButton:pressed { background: #334155; }
-    QPushButton#secondaryBtn { background: #e2e8f0; color: #334155; font-weight: normal; border: 1px solid #cbd5e1; }
-    QPushButton#secondaryBtn:hover { background: #cbd5e1; }
-    QComboBox, QDoubleSpinBox { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 6px; }
-    QLabel { color: #334155; }
-    QCheckBox { color: #334155; spacing: 5px; }
-    QSlider::groove:horizontal { border: 1px solid #cbd5e1; height: 6px; background: #f1f5f9; border-radius: 3px; }
-    QSlider::sub-page:horizontal { background: #0f172a; border-radius: 3px; }
-    QSlider::handle:horizontal { background: #0f172a; border: 1px solid #000000; width: 14px; margin-top: -4px; margin-bottom: -4px; border-radius: 7px; }
-    QSlider::handle:horizontal:hover { background: #334155; }
-"""
-
-
-class ColorRampPreviewWidget(QFrame):
-    """Draws a smooth graphical preview of the selected elevation color ramp."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.preset_key = "GLOBAL_MAPPER_ATLAS"
-        self.invert = False
-        self.setFixedHeight(24)
-        self.setFrameShape(QFrame.StyledPanel)
-        self.setStyleSheet("border: 1px solid #cbd5e1; border-radius: 4px;")
-
-    def set_preset(self, preset_key: str, invert: bool = False):
-        self.preset_key = preset_key
-        self.invert = invert
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        rect = self.rect().adjusted(1, 1, -1, -1)
-
-        preset = ELEVATION_PRESETS.get(self.preset_key, ELEVATION_PRESETS["GLOBAL_MAPPER_ATLAS"])
-        stops = preset["stops"]
-        if self.invert:
-            stops = list(reversed(stops))
-
-        gradient = QLinearGradient(rect.left(), rect.top(), rect.right(), rect.top())
-        for stop_frac, hex_color, _ in stops:
-            gradient.setColorAt(stop_frac, QColor(hex_color))
-
-        painter.fillRect(rect, QBrush(gradient))
-        painter.end()
+from app.ui.dem_elevation_preview import ColorRampPreviewWidget, DIALOG_STYLE
 
 
 class DEMElevationDialog(QDialog):
-    """
-    Dedicated dialog for Global Mapper / ArcGIS style DEM, DTM, and DSM elevation symbology.
-    """
+    """Dedicated dialog for Global Mapper / ArcGIS style DEM, DTM, and DSM elevation symbology."""
 
     def __init__(self, map_canvas=None, target_layer=None, parent=None):
         super().__init__(parent)
@@ -100,7 +38,7 @@ class DEMElevationDialog(QDialog):
         main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(10)
 
-        # ── Layer Selection & Quick Stats ─────────────────────
+        # Layer Selection & Quick Stats
         top_group = QGroupBox("Elevation Layer Selection")
         top_form = QFormLayout()
         
@@ -115,7 +53,7 @@ class DEMElevationDialog(QDialog):
         top_group.setLayout(top_form)
         main_layout.addWidget(top_group)
 
-        # ── Render Modes (Tabs) ───────────────────────────────
+        # Render Modes (Tabs)
         self.tabs = QTabWidget()
 
         # Tab 1: Topographic / Elevation Colormap
@@ -129,11 +67,9 @@ class DEMElevationDialog(QDialog):
         self.preset_combo.currentIndexChanged.connect(self._on_preset_changed)
         form_topo.addRow("Elevation Palette:", self.preset_combo)
 
-        # Preview Widget
         self.ramp_preview = ColorRampPreviewWidget()
         form_topo.addRow("Color Ramp:", self.ramp_preview)
 
-        # Range Override
         range_layout = QHBoxLayout()
         self.spin_min_val = QDoubleSpinBox()
         self.spin_min_val.setRange(-20000.0, 20000.0)
@@ -151,7 +87,6 @@ class DEMElevationDialog(QDialog):
         range_layout.addWidget(self.spin_max_val)
         form_topo.addRow("Elevation Range:", range_layout)
 
-        # Reset bounds buttons
         btn_row_bounds = QHBoxLayout()
         btn_cut_reset = QPushButton("Reset to 2%–98% Cut")
         btn_cut_reset.setObjectName("secondaryBtn")
@@ -163,7 +98,6 @@ class DEMElevationDialog(QDialog):
         btn_row_bounds.addWidget(btn_full_reset)
         form_topo.addRow("", btn_row_bounds)
 
-        # Options
         self.chk_draped_relief = QCheckBox("💡 Blend with 3D Shaded Relief (Global Mapper 3D terrain shadows)")
         self.chk_draped_relief.setChecked(True)
         self.chk_invert = QCheckBox("Invert Colormap Colors")
@@ -177,12 +111,11 @@ class DEMElevationDialog(QDialog):
         layout_topo.addLayout(form_topo)
         self.tabs.addTab(tab_topo, "🏔 Topographic Color Ramp")
 
-        # Tab 2: 3D Hillshade (Shaded Relief)
+        # Tab 2: 3D Hillshade
         tab_hillshade = QWidget()
         layout_hillshade = QVBoxLayout(tab_hillshade)
         form_hillshade = QFormLayout()
 
-        # Sun Azimuth (0 - 360)
         az_row = QHBoxLayout()
         self.slider_azimuth = QSlider(Qt.Horizontal)
         self.slider_azimuth.setRange(0, 360)
@@ -197,7 +130,6 @@ class DEMElevationDialog(QDialog):
         az_row.addWidget(self.spin_azimuth)
         form_hillshade.addRow("Sun Azimuth (Lighting Angle):", az_row)
 
-        # Sun Altitude (0 - 90)
         alt_row = QHBoxLayout()
         self.slider_altitude = QSlider(Qt.Horizontal)
         self.slider_altitude.setRange(0, 90)
@@ -212,7 +144,6 @@ class DEMElevationDialog(QDialog):
         alt_row.addWidget(self.spin_altitude)
         form_hillshade.addRow("Sun Altitude (Elevation Angle):", alt_row)
 
-        # Vertical Exaggeration (Z Factor)
         z_row = QHBoxLayout()
         self.spin_z_factor = QDoubleSpinBox()
         self.spin_z_factor.setRange(0.0001, 100.0)
@@ -243,9 +174,8 @@ class DEMElevationDialog(QDialog):
 
         main_layout.addWidget(self.tabs)
 
-        # ── Buttons ───────────────────────────────────────────
+        # Buttons
         btn_layout = QHBoxLayout()
-        
         btn_apply = QPushButton("⚡ Apply Now")
         btn_apply.clicked.connect(self.apply_style)
 
@@ -264,10 +194,7 @@ class DEMElevationDialog(QDialog):
 
     def _populate_layers(self):
         self.layer_combo.clear()
-        layers = [
-            l for l in QgsProject.instance().mapLayers().values()
-            if l.type() == QgsMapLayer.RasterLayer
-        ]
+        layers = [l for l in QgsProject.instance().mapLayers().values() if l.type() == QgsMapLayer.RasterLayer]
         if not layers:
             self.layer_combo.addItem("-- No Raster Layers in Project --", None)
             return
@@ -279,9 +206,7 @@ class DEMElevationDialog(QDialog):
 
     def _get_current_layer(self):
         layer_id = self.layer_combo.currentData()
-        if not layer_id:
-            return None
-        return QgsProject.instance().mapLayer(layer_id)
+        return QgsProject.instance().mapLayer(layer_id) if layer_id else None
 
     def _on_layer_changed(self):
         layer = self._get_current_layer()
@@ -326,9 +251,7 @@ class DEMElevationDialog(QDialog):
             return
 
         curr_tab = self.tabs.currentIndex()
-
         if curr_tab == 0:
-            # Topographic Color Ramp
             preset_key = self.preset_combo.currentData()
             min_val = self.spin_min_val.value()
             max_val = self.spin_max_val.value()
@@ -338,44 +261,20 @@ class DEMElevationDialog(QDialog):
 
             if use_draped:
                 success = ElevationStyler.apply_draped_relief(
-                    layer,
-                    preset_key=preset_key,
-                    band=1,
-                    z_factor=1.5,
-                    multidirectional=True
+                    layer, preset_key=preset_key, band=1, z_factor=1.5, multidirectional=True
                 )
             else:
                 success = ElevationStyler.apply_elevation_colormap(
-                    layer,
-                    preset_key=preset_key,
-                    band=1,
-                    min_val=min_val,
-                    max_val=max_val,
-                    invert=invert,
-                    enable_bilinear=bilinear
+                    layer, preset_key=preset_key, band=1, min_val=min_val, max_val=max_val, invert=invert, enable_bilinear=bilinear
                 )
         elif curr_tab == 1:
-            # Hillshade
-            azimuth = self.spin_azimuth.value()
-            altitude = self.spin_altitude.value()
-            z_factor = self.spin_z_factor.value()
-            multidir = self.chk_multidir.isChecked()
-
             success = ElevationStyler.apply_hillshade(
-                layer,
-                band=1,
-                z_factor=z_factor,
-                azimuth=azimuth,
-                altitude=altitude,
-                multidirectional=multidir
+                layer, band=1, z_factor=self.spin_z_factor.value(), azimuth=self.spin_azimuth.value(),
+                altitude=self.spin_altitude.value(), multidirectional=self.chk_multidir.isChecked()
             )
         else:
-            # Grayscale Contrast
-            mode = self.gray_mode_combo.currentData()
             success = ElevationStyler.apply_grayscale_contrast(
-                layer,
-                band=1,
-                stretch_type=mode
+                layer, band=1, stretch_type=self.gray_mode_combo.currentData()
             )
 
         if success and self.map_canvas:

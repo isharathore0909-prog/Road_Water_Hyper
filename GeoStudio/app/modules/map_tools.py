@@ -8,35 +8,19 @@ feature info, bearing tool, and grid generation.
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QPushButton,
     QLabel, QComboBox, QGroupBox, QDoubleSpinBox, QSpinBox,
-    QTextEdit, QMessageBox, QCheckBox, QLineEdit, QColorDialog,
-    QButtonGroup, QRadioButton
+    QTextEdit, QMessageBox, QLineEdit, QRadioButton
 )
-from qgis.PyQt.QtCore import Qt, QPointF
 from qgis.PyQt.QtGui import QColor
 from qgis.core import (
-    QgsProject, QgsMapLayer, QgsDistanceArea,
-    QgsCoordinateReferenceSystem, QgsPointXY,
-    QgsUnitTypes, QgsWkbTypes
+    QgsProject, QgsMapLayer, QgsPointXY, QgsWkbTypes
 )
-from qgis.gui import (
-    QgsMapToolEmitPoint, QgsMapToolPan,
-    QgsRubberBand, QgsMapTool
-)
-import processing
+from qgis.gui import QgsRubberBand
 from core.style import MODULE_STYLE
+from .map_tool_operations import (
+    CoordClickTool, format_coordinate_text, calculate_measurement, generate_grid_layer
+)
 
 STYLE = MODULE_STYLE
-
-
-class CoordClickTool(QgsMapToolEmitPoint):
-    """Simple click tool that emits point coordinates."""
-    def __init__(self, canvas, callback):
-        super().__init__(canvas)
-        self.callback = callback
-
-    def canvasReleaseEvent(self, event):
-        point = self.toMapCoordinates(event.pos())
-        self.callback(point)
 
 
 class MapToolsWidget(QWidget):
@@ -185,23 +169,9 @@ class MapToolsWidget(QWidget):
 
     def _on_coord_clicked(self, point):
         crs = self.canvas.mapSettings().destinationCrs()
-        x, y = point.x(), point.y()
-        text = (
-            f"CRS: {crs.authid()}\n"
-            f"X / Lon: {x:.6f}\n"
-            f"Y / Lat: {y:.6f}\n"
-        )
-        # If geographic CRS, also show DMS
-        if crs.isGeographic():
-            def to_dms(deg):
-                d = int(abs(deg))
-                m = int((abs(deg) - d) * 60)
-                s = (abs(deg) - d - m / 60) * 3600
-                sign = "+" if deg >= 0 else "-"
-                return f"{sign}{d}°{m}'{s:.2f}\""
-            text += f"DMS: {to_dms(y)}, {to_dms(x)}\n"
+        text, short_lbl = format_coordinate_text(point, crs)
         self.coord_output.setText(text)
-        self.coord_label.setText(f"📍  {x:.6f}, {y:.6f}  [{crs.authid()}]")
+        self.coord_label.setText(short_lbl)
 
     # ------------------------------------------------------------------
     # Measure Tool
@@ -224,33 +194,13 @@ class MapToolsWidget(QWidget):
         self._update_measure_result()
 
     def _update_measure_result(self):
-        if not self._measure_points:
-            return
-        da = QgsDistanceArea()
-        da.setSourceCrs(
-            self.canvas.mapSettings().destinationCrs(),
-            QgsProject.instance().transformContext()
+        res = calculate_measurement(
+            self._measure_points,
+            self.measure_distance_rb.isChecked(),
+            self.measure_unit.currentIndex(),
+            self.canvas
         )
-        da.setEllipsoid(QgsProject.instance().ellipsoid())
-
-        if self.measure_distance_rb.isChecked():
-            total = 0.0
-            for i in range(1, len(self._measure_points)):
-                total += da.measureLine(self._measure_points[i-1], self._measure_points[i])
-            unit_idx = self.measure_unit.currentIndex()
-            units = [
-                (1.0, "m"), (1/1000, "km"), (1/1609.344, "mi"),
-                (3.28084, "ft"), (1.0, "°")
-            ]
-            factor, unit_label = units[unit_idx]
-            self.measure_result.setText(f"Distance: {total * factor:.4f} {unit_label}")
-        else:
-            if len(self._measure_points) >= 3:
-                pts = self._measure_points + [self._measure_points[0]]
-                from qgis.core import QgsGeometry
-                poly = QgsGeometry.fromPolygonXY([pts])
-                area = da.measureArea(poly)
-                self.measure_result.setText(f"Area: {area:.4f} m²  ({area/10000:.4f} ha)")
+        self.measure_result.setText(res)
 
     def _clear_measure(self):
         self._measure_points = []
@@ -287,30 +237,14 @@ class MapToolsWidget(QWidget):
     # Grid
     # ------------------------------------------------------------------
     def _generate_grid(self):
-        extent = self.canvas.extent()
-        type_map = {
-            "Rectangle": 0,
-            "Diamond": 1,
-            "Hexagon (Flat-top)": 4,
-            "Hexagon (Pointy-top)": 5,
-        }
-        grid_type = type_map.get(self.grid_type.currentText(), 0)
-        params = {
-            "TYPE": grid_type,
-            "EXTENT": f"{extent.xMinimum()},{extent.xMaximum()},{extent.yMinimum()},{extent.yMaximum()}"
-                      f" [{self.canvas.mapSettings().destinationCrs().authid()}]",
-            "HSPACING": self.grid_width.value(),
-            "VSPACING": self.grid_height.value(),
-            "HOVERLAY": 0,
-            "VOVERLAY": 0,
-            "CRS": self.canvas.mapSettings().destinationCrs(),
-            "OUTPUT": "memory:",
-        }
         try:
-            result = processing.run("native:creategrid", params)
-            out = result.get("OUTPUT")
+            out = generate_grid_layer(
+                self.canvas,
+                self.grid_type.currentText(),
+                self.grid_width.value(),
+                self.grid_height.value()
+            )
             if out:
-                out.setName(f"grid_{self.grid_type.currentText().replace(' ', '_')}")
                 QgsProject.instance().addMapLayer(out)
                 self.iface.messageBar().pushSuccess("GeoAnalytica", "Grid created!")
         except Exception as e:

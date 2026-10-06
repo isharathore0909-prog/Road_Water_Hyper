@@ -80,13 +80,11 @@ class CudaKernels:
             result = slope_rad * (180.0 / math.pi)
 
         elif mode == "aspect":
-            # Aspect in degrees = 57.29578 * atan2(dy, -dx)
+            # Aspect in compass degrees (0 - 360 clockwise from North, Flat = -1)
             aspect_rad = torch.atan2(dz_dy, -dz_dx)
-            aspect_deg = aspect_rad * (180.0 / math.pi)
-            # Adjust to 0 - 360 compass degrees
-            result = torch.where(aspect_deg < 0.0, 90.0 - aspect_deg, aspect_deg)
-            result = torch.where(aspect_deg > 90.0, 360.0 - aspect_deg + 90.0, 90.0 - aspect_deg)
-            result = torch.remainder(result, 360.0)
+            aspect_deg = torch.remainder(90.0 - aspect_rad * (180.0 / math.pi), 360.0)
+            flat_mask = (dz_dx == 0.0) & (dz_dy == 0.0)
+            result = torch.where(flat_mask, torch.tensor(-1.0, device=device), aspect_deg)
 
         elif mode == "hillshade":
             zenith_rad = math.radians(90.0 - altitude_deg)
@@ -105,6 +103,33 @@ class CudaKernels:
         elif mode == "tri":
             # Topographic Roughness Index: sqrt(dx^2 + dy^2)
             result = torch.sqrt(dz_dx ** 2 + dz_dy ** 2)
+
+        elif mode == "tpi":
+            # Topographic Position Index: z5 - mean(8-neighborhood)
+            kernel_mean = torch.tensor([
+                [1.0/8, 1.0/8, 1.0/8],
+                [1.0/8, 0.0,   1.0/8],
+                [1.0/8, 1.0/8, 1.0/8]
+            ], dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
+            mean_nbr = torch.nn.functional.conv2d(tensor, kernel_mean, padding=0).squeeze()
+            z5 = tensor[:, :, 1:-1, 1:-1].squeeze()
+            result = z5 - mean_nbr
+
+        elif mode == "curvature":
+            # Surface Curvature via Laplacian conv2d
+            lap_kernel = torch.tensor([
+                [0.0,  1.0, 0.0],
+                [1.0, -4.0, 1.0],
+                [0.0,  1.0, 0.0]
+            ], dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0) / (cellsize_x * cellsize_y)
+            result = -2.0 * torch.nn.functional.conv2d(tensor, lap_kernel, padding=0).squeeze() * 100.0
+
+        elif mode == "twi":
+            # Topographic Wetness Index
+            slope_rad = torch.atan(torch.sqrt(dz_dx ** 2 + dz_dy ** 2))
+            tan_slope = torch.clamp(torch.tan(slope_rad), min=0.001)
+            area_proxy = float(cellsize_x) * torch.ones_like(tan_slope)
+            result = torch.log(torch.clamp(area_proxy / tan_slope, min=1e-4))
 
         else:
             result = tensor.squeeze()

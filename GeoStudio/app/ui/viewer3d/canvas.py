@@ -37,30 +37,52 @@ class GLPointCloudCanvas(QOpenGLWidget):
         self.bg_color = (0.0, 0.0, 0.0, 1.0)
 
         self._last_pos = QPoint()
+        self.color_dict = {}
 
-    def set_point_data(self, pts_xyz, rgb_colors, z_colors, class_colors, intensity_colors, mode="auto"):
-        self.pts_xyz = pts_xyz
-        self.rgb_colors = rgb_colors
-        self.z_colors = z_colors
-        self.class_colors = class_colors
-        self.intensity_colors = intensity_colors
+    def set_point_data(self, pts_xyz, rgb_colors, z_colors, class_colors, intensity_colors, mode="auto", color_dict=None):
+        def _to_f32(arr):
+            if arr is None:
+                return None
+            return np.ascontiguousarray(arr, dtype=np.float32)
+
+        self.pts_xyz = _to_f32(pts_xyz)
+        self.rgb_colors = _to_f32(rgb_colors)
+        self.z_colors = _to_f32(z_colors)
+        self.class_colors = _to_f32(class_colors)
+        self.intensity_colors = _to_f32(intensity_colors)
+        self.color_dict = {}
+        if color_dict:
+            for k, v in color_dict.items():
+                self.color_dict[k] = _to_f32(v)
+
+        # Ensure base colors are indexed
+        if "Elevation" not in self.color_dict and self.z_colors is not None:
+            self.color_dict["Elevation"] = self.z_colors
+        if "RGB" not in self.color_dict and self.rgb_colors is not None:
+            self.color_dict["RGB"] = self.rgb_colors
+        if "Classification" not in self.color_dict and self.class_colors is not None:
+            self.color_dict["Classification"] = self.class_colors
+        if "Intensity" not in self.color_dict and self.intensity_colors is not None:
+            self.color_dict["Intensity"] = self.intensity_colors
 
         if mode == "auto":
-            if rgb_colors is not None and not np.all(rgb_colors == 0):
-                self.current_colors = rgb_colors
+            if self.rgb_colors is not None and not np.all(self.rgb_colors == 0):
+                self.current_colors = self.rgb_colors
             else:
-                self.current_colors = z_colors
-        elif mode == "rgb" and rgb_colors is not None:
-            self.current_colors = rgb_colors
-        elif mode == "class" and class_colors is not None:
-            self.current_colors = class_colors
-        elif mode == "intensity" and intensity_colors is not None:
-            self.current_colors = intensity_colors
+                self.current_colors = self.z_colors
+        elif mode in self.color_dict:
+            self.current_colors = self.color_dict[mode]
+        elif mode == "rgb" and self.rgb_colors is not None:
+            self.current_colors = self.rgb_colors
+        elif mode == "class" and self.class_colors is not None:
+            self.current_colors = self.class_colors
+        elif mode == "intensity" and self.intensity_colors is not None:
+            self.current_colors = self.intensity_colors
         else:
-            self.current_colors = z_colors
+            self.current_colors = self.z_colors
 
-        if pts_xyz is not None and len(pts_xyz) > 0:
-            max_extent = float(np.max(np.abs(pts_xyz)))
+        if self.pts_xyz is not None and len(self.pts_xyz) > 0:
+            max_extent = float(np.max(np.abs(self.pts_xyz)))
             self.zoom_dist = max(50.0, max_extent * 2.2)
             self.pan_x = 0.0
             self.pan_y = 0.0
@@ -68,13 +90,16 @@ class GLPointCloudCanvas(QOpenGLWidget):
         self.update()
 
     def set_color_mode(self, mode_str: str):
-        if mode_str == "RGB" and self.rgb_colors is not None:
+        # Look up directly in color_dict or fallback to standard properties
+        if mode_str in self.color_dict:
+            self.current_colors = self.color_dict[mode_str]
+        elif mode_str in ["RGB", "RGB (True Color)"] and self.rgb_colors is not None:
             self.current_colors = self.rgb_colors
-        elif mode_str == "Elevation":
+        elif mode_str in ["Elevation", "Elevation (Turbo Ramp)"]:
             self.current_colors = self.z_colors
-        elif mode_str == "Classification" and self.class_colors is not None:
+        elif mode_str in ["Classification", "Classification (ASPRS)"] and self.class_colors is not None:
             self.current_colors = self.class_colors
-        elif mode_str == "Intensity" and self.intensity_colors is not None:
+        elif mode_str in ["Intensity", "Intensity (Laser Return)"] and self.intensity_colors is not None:
             self.current_colors = self.intensity_colors
         else:
             self.current_colors = self.z_colors
@@ -123,8 +148,14 @@ class GLPointCloudCanvas(QOpenGLWidget):
     def initializeGL(self):
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_POINT_SMOOTH)
+        glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        try:
+            glEnable(GL_MULTISAMPLE)
+            glShadeModel(GL_SMOOTH)
+        except Exception:
+            pass
         glClearColor(*self.bg_color)
 
     def resizeGL(self, w, h):
@@ -152,20 +183,26 @@ class GLPointCloudCanvas(QOpenGLWidget):
             glPushMatrix()
             glScalef(1.0, 1.0, float(self.z_exaggeration))
 
-            glEnableClientState(GL_VERTEX_ARRAY)
-            glEnableClientState(GL_COLOR_ARRAY)
+            try:
+                glEnableClientState(GL_VERTEX_ARRAY)
+                glEnableClientState(GL_COLOR_ARRAY)
 
-            glVertexPointer(3, GL_FLOAT, 0, self.pts_xyz)
+                pts = np.ascontiguousarray(self.pts_xyz, dtype=np.float32)
+                glVertexPointer(3, GL_FLOAT, 0, pts)
 
-            if self.current_colors is not None and len(self.current_colors) == len(self.pts_xyz):
-                glColorPointer(3, GL_FLOAT, 0, self.current_colors)
-            else:
-                glColorPointer(3, GL_FLOAT, 0, self.z_colors)
+                colors = self.current_colors if (self.current_colors is not None and len(self.current_colors) == len(self.pts_xyz)) else self.z_colors
+                if colors is not None and len(colors) == len(self.pts_xyz):
+                    col = np.ascontiguousarray(colors, dtype=np.float32)
+                    glColorPointer(3, GL_FLOAT, 0, col)
+                else:
+                    glColor3f(0.85, 0.85, 0.85)
 
-            glDrawArrays(GL_POINTS, 0, len(self.pts_xyz))
-
-            glDisableClientState(GL_COLOR_ARRAY)
-            glDisableClientState(GL_VERTEX_ARRAY)
+                glDrawArrays(GL_POINTS, 0, len(self.pts_xyz))
+            except Exception as e:
+                pass
+            finally:
+                glDisableClientState(GL_COLOR_ARRAY)
+                glDisableClientState(GL_VERTEX_ARRAY)
 
             if self.show_bbox:
                 self._draw_bounding_box()

@@ -66,7 +66,7 @@ class RasterOverviewWorker(QThread):
             # Build overviews using average resampling
             ds.BuildOverviews("AVERAGE", levels, gdal_progress_cb)
             ds.FlushCache()
-            del ds
+            ds = None
 
             self.finished_success.emit(self.layer_name, self.file_path)
 
@@ -110,16 +110,17 @@ class AutoRasterOptimizer(QObject):
 
             # If small raster (< 1500 px), pyramids are unnecessary
             if width <= 1500 and height <= 1500:
-                del ds
+                ds = None
                 return
 
             band = ds.GetRasterBand(1)
             if band is None:
-                del ds
+                ds = None
                 return
 
             has_overviews = band.GetOverviewCount() > 0
-            del ds
+            band = None
+            ds = None
 
             if not has_overviews:
                 self._start_worker(norm_path, layer.name(), layer, canvas)

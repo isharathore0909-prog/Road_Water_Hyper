@@ -162,6 +162,7 @@ def build_main_menus(mw):
     m_terrain.addSeparator()
     m_terrain.addAction(_act(mw, "Elevation Profile Tool", mw.open_elevation_profile, icon_key="profile"))
     m_terrain.addAction(_act(mw, "Viewshed Analysis...", mw.open_viewshed, icon_key="viewshed"))
+    m_terrain.addAction(_act(mw, "Volumetric Analysis & Stage-Storage...", mw.open_volumetric_analysis, icon_key="profile"))
     m_terrain.addAction(_act(mw, "Cut & Fill Volume...", mw.open_cut_fill, icon_key="cut_fill"))
     m_terrain.addAction(_act(mw, "Watershed Basin Analysis...", mw.open_hydro_watershed, icon_key="watershed"))
 
