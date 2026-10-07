@@ -31,7 +31,7 @@ class GLPointCloudCanvas(QOpenGLWidget):
         self.pan_y = 0.0
         self.zoom_dist = 300.0
         self.z_exaggeration = 1.5
-        self.point_size = 3.5
+        self.point_size = 4.5
         self.show_grid = True
         self.show_bbox = True
         self.bg_color = (0.0, 0.0, 0.0, 1.0)

@@ -24,12 +24,22 @@ class GeoStudio3DViewerWindow(QDialog):
         super().__init__(parent)
         self.layer = layer
         self.file_path = file_path or (layer.source() if layer else None)
+        self.max_points = 6000000
         self.pts_xyz = None
 
         self._init_window()
         self._build_ui()
         if self.file_path:
             QTimer.singleShot(100, self._load_data)
+
+    def load_point_cloud(self, file_path: str):
+        """Loads and visualizes a new point cloud file path."""
+        self.file_path = file_path
+        fname = os.path.basename(file_path) if file_path else "Point Cloud"
+        self.setWindowTitle(f"GeoStudio 3D Visualizer — {fname}")
+        if hasattr(self, 'lbl_dataset'):
+            self.lbl_dataset.setText(f"Dataset: <b>{fname}</b>")
+        self._load_data()
 
     def _init_window(self):
         fname = os.path.basename(self.file_path) if self.file_path else "Point Cloud"
@@ -108,7 +118,7 @@ class GeoStudio3DViewerWindow(QDialog):
 
         try:
             QApplication.setOverrideCursor(Qt.WaitCursor)
-            res = PointCloudReader.load_las_points(self.file_path, max_points=1200000)
+            res = PointCloudReader.load_las_points(self.file_path, max_points=self.max_points)
             if len(res) >= 10:
                 pts_xyz, rgb, z_col, class_col, int_col, center, z_min, z_max, total_pts, color_dict = res
             else:
@@ -136,6 +146,14 @@ class GeoStudio3DViewerWindow(QDialog):
         if 0 <= idx < len(COLOR_MODE_KEYS):
             self.canvas.set_color_mode(COLOR_MODE_KEYS[idx])
 
+    def _on_budget_changed(self, idx: int):
+        budgets = [6000000, 10000000, 0, 4000000, 2000000]
+        if 0 <= idx < len(budgets):
+            new_budget = budgets[idx]
+            if new_budget != self.max_points:
+                self.max_points = new_budget
+                self._load_data()
+
     def _export_screenshot(self):
         path, _ = QFileDialog.getSaveFileName(
             self, "Save 3D Snapshot", "3d_point_cloud_view.png", "PNG Image (*.png);;JPEG Image (*.jpg)"
@@ -144,3 +162,8 @@ class GeoStudio3DViewerWindow(QDialog):
             img = self.canvas.grabFramebuffer()
             img.save(path)
             QMessageBox.information(self, "Snapshot", f"Saved 3D screenshot to:\n{path}")
+
+
+# Backwards compatibility alias
+Viewer3DWindow = GeoStudio3DViewerWindow
+

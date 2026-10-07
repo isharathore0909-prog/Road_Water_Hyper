@@ -58,10 +58,22 @@ def build_3d_side_panel(win: QWidget) -> QWidget:
     win.combo_color.currentIndexChanged.connect(win._on_color_mode_changed)
     vbox_sym.addWidget(win.combo_color)
 
+    vbox_sym.addWidget(QLabel("Point Budget / Quality:"))
+    win.combo_budget = QComboBox()
+    win.combo_budget.addItems([
+        "High Detail (6M Points - Default)",
+        "Ultra Detail (10M Points)",
+        "Full Cloud (Load All Points)",
+        "Balanced (4M Points)",
+        "Fast Preview (2M Points)"
+    ])
+    win.combo_budget.currentIndexChanged.connect(win._on_budget_changed)
+    vbox_sym.addWidget(win.combo_budget)
+
     vbox_sym.addWidget(QLabel("Point Size (px):"))
     win.slider_psize = QSlider(Qt.Horizontal)
-    win.slider_psize.setRange(1, 12)
-    win.slider_psize.setValue(4)
+    win.slider_psize.setRange(1, 15)
+    win.slider_psize.setValue(5)
     win.slider_psize.valueChanged.connect(lambda v: win.canvas.set_point_size(float(v)))
     vbox_sym.addWidget(win.slider_psize)
 

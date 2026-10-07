@@ -31,7 +31,7 @@ def load_las_points_data(file_path: str, max_points: int = 8000000):
         import laspy
         with laspy.open(file_path) as fh:
             total_points = fh.header.point_count
-            step = max(1, total_points // max_points)
+            step = 1 if (max_points <= 0 or max_points >= total_points) else max(1, total_points // max_points)
             las = fh.read()
 
             x = np.array(las.x[::step], dtype=np.float64)
@@ -178,14 +178,23 @@ def load_las_points_data(file_path: str, max_points: int = 8000000):
                 rgb_offset = 30 if point_len >= 36 else None
 
             if rgb_offset is not None and point_len >= rgb_offset + 6:
-                r = np.ascontiguousarray(raw[:, rgb_offset:rgb_offset + 2]).view(np.uint16).flatten()
-                g = np.ascontiguousarray(raw[:, rgb_offset + 2:rgb_offset + 4]).view(np.uint16).flatten()
-                b = np.ascontiguousarray(raw[:, rgb_offset + 4:rgb_offset + 6]).view(np.uint16).flatten()
-                if np.max(r) > 255 or np.max(g) > 255 or np.max(b) > 255:
-                    r = r >> 8
-                    g = g >> 8
-                    b = b >> 8
-                rgb_colors = np.column_stack((r, g, b)).astype(np.float32) / 255.0
+                r_raw = np.ascontiguousarray(raw[:, rgb_offset:rgb_offset + 2]).view(np.uint16).flatten().astype(np.float32)
+                g_raw = np.ascontiguousarray(raw[:, rgb_offset + 2:rgb_offset + 4]).view(np.uint16).flatten().astype(np.float32)
+                b_raw = np.ascontiguousarray(raw[:, rgb_offset + 4:rgb_offset + 6]).view(np.uint16).flatten().astype(np.float32)
+                max_c = max(float(np.max(r_raw)), float(np.max(g_raw)), float(np.max(b_raw)))
+                if max_c > 255.0:
+                    all_c = np.concatenate([r_raw, g_raw, b_raw])
+                    p1 = max(0.0, float(np.percentile(all_c, 1)))
+                    p99 = min(65535.0, float(np.percentile(all_c, 99)))
+                    rng = max(1.0, p99 - p1)
+                    r = np.clip((r_raw - p1) / rng, 0.0, 1.0).astype(np.float32)
+                    g = np.clip((g_raw - p1) / rng, 0.0, 1.0).astype(np.float32)
+                    b = np.clip((b_raw - p1) / rng, 0.0, 1.0).astype(np.float32)
+                else:
+                    r = (r_raw / 255.0).astype(np.float32)
+                    g = (g_raw / 255.0).astype(np.float32)
+                    b = (b_raw / 255.0).astype(np.float32)
+                rgb_colors = np.column_stack((r, g, b)).astype(np.float32)
             else:
                 rgb_colors = None
 
