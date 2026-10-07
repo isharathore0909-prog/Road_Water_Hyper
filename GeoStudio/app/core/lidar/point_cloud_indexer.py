@@ -56,8 +56,26 @@ class PointCloudIndexer:
 
     @staticmethod
     def get_indexer_command(input_path: str, output_path: str):
-        """Builds an optimized, multi-threaded PDAL pipeline tailored to dataset size."""
-        qgis_root = r"C:\Program Files\QGIS 3.40.14"
+        """Builds an optimized, multi-threaded PDAL/Untwine pipeline tailored to dataset size."""
+        import glob
+        qgis_candidates = [
+            os.environ.get("QGIS_PREFIX_PATH", ""),
+            os.environ.get("OSGEO4W_ROOT", ""),
+            r"C:\Program Files\QGIS 3.40.14",
+            r"C:\Program Files\QGIS 3.34.14",
+            r"C:\Program Files\QGIS 3.28.15",
+            r"C:\OSGeo4W",
+            r"C:\OSGeo4W64",
+        ] + glob.glob(r"C:\Program Files\QGIS*")
+
+        qgis_root = ""
+        for qc in qgis_candidates:
+            if qc and os.path.isdir(qc):
+                qgis_root = qc
+                break
+        if not qgis_root:
+            qgis_root = r"C:\Program Files\QGIS 3.40.14"
+
         bin_dir = os.path.join(qgis_root, "bin")
         qgis_bin = os.path.join(qgis_root, "apps", "qgis-ltr", "bin")
 
@@ -83,8 +101,8 @@ class PointCloudIndexer:
         for p in pdal_candidates:
             if p and os.path.exists(p):
                 stages = [input_path]
-                if total_pts > 15_000_000:
-                    step = max(2, int(round(total_pts / 12_000_000)))
+                if total_pts > 20_000_000:
+                    step = max(2, int(round(total_pts / 15_000_000)))
                     stages.append({
                         "type": "filters.decimation",
                         "step": step
@@ -112,7 +130,19 @@ class PointCloudIndexer:
                     ]
                     return cmd, env
 
+        # Fallback to Untwine if PDAL is not directly found
+        untwine_candidates = [
+            os.path.join(qgis_root, "apps", "qgis-ltr", "untwine.exe"),
+            os.path.join(qgis_root, "bin", "untwine.exe"),
+            shutil.which("untwine"),
+        ]
+        for u in untwine_candidates:
+            if u and os.path.exists(u):
+                cmd = [u, "-i", input_path, "-o", output_path]
+                return cmd, env
+
         return None, env
+
 
     @staticmethod
     def get_target_copc_path(file_path: str) -> str:

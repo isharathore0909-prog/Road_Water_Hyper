@@ -28,3 +28,8 @@ class AlgorithmDefinition:
         self.supports_gpu = supports_gpu
         self.requires_halo = requires_halo
         self.halo_size = halo_size
+
+    @property
+    def group(self) -> str:
+        """Alias for category/subcategory group."""
+        return f"{self.category} / {self.subcategory}" if self.subcategory else self.category

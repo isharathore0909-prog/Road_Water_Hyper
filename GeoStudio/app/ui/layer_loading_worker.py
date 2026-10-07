@@ -52,14 +52,22 @@ def load_point_cloud_layer(file_path: str, progress_cb=None):
         else:
             layer.setCrs(QgsCoordinateReferenceSystem("EPSG:32643"))
 
-    if progress_cb:
-        progress_cb(92, "Styling discrete 3D point cloud sprites (True Color & Elevation)...")
-    LidarStyler.auto_style(layer, point_size=3.5)
-
     layer.setCustomProperty("original_las_path", file_path)
     layer.setCustomProperty("is_lidar_layer", True)
     if copc_path:
         layer.setCustomProperty("copc_path", copc_path)
+
+    try:
+        if hasattr(layer, "setMaximumScreenError"):
+            layer.setMaximumScreenError(1.0)
+        if hasattr(layer, "setPointBudget"):
+            layer.setPointBudget(20000000)
+    except Exception:
+        pass
+
+    if progress_cb:
+        progress_cb(92, "Styling discrete 3D point cloud sprites (True Color & Elevation)...")
+    LidarStyler.auto_style(layer, point_size=3.5)
 
     return layer
 

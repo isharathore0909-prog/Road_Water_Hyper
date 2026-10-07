@@ -22,6 +22,7 @@ DEM_KEYWORDS = [
 def is_dem_or_elevation(layer: QgsRasterLayer) -> bool:
     """
     Identifies if a raster layer is a DEM, DTM, DSM, or elevation surface.
+    Distinguishes elevation models from orthomosaics, satellite imagery, and aerial photos.
     """
     if not layer or not layer.isValid() or not isinstance(layer, QgsRasterLayer):
         return False
@@ -31,6 +32,15 @@ def is_dem_or_elevation(layer: QgsRasterLayer) -> bool:
 
     name_lower = layer.name().lower()
     source_lower = layer.source().lower()
+
+    # Explicit imagery / orthomosaic exclusions
+    for img_kw in [
+        "ortho", "orthomosaic", "mosaic", "aerial", "satellite", "imagery",
+        "photo", "rgb", "rgba", "truecolor", "uav", "drone", "rgb_ortho",
+        "google", "bing", "osm", "basemap", "sentinel", "landsat"
+    ]:
+        if img_kw in name_lower or img_kw in source_lower:
+            return False
 
     # Exclude derivative terrain analysis and hydrology products
     for deriv in [
@@ -55,11 +65,29 @@ def is_dem_or_elevation(layer: QgsRasterLayer) -> bool:
         if kw in name_lower or kw in source_lower:
             return True
 
-    exts = [".dem", ".dtm", ".dsm", ".hgt", ".asc", ".bil", ".flt", ".xyz", ".tif", ".tiff"]
+    exts = [".dem", ".dtm", ".dsm", ".hgt", ".asc", ".bil", ".flt", ".xyz", ".tif", ".tiff", ".img", ".vrt", ".grd"]
     if any(source_lower.endswith(ext) for ext in exts):
-        return True
+        # Check if single band has non-Byte data type (Float32, Float64, Int16, Int32, UInt16)
+        try:
+            dp = layer.dataProvider()
+            if dp:
+                dt = dp.dataType(1)
+                # In QGIS GDAL provider: 2=UInt16, 3=Int16, 4=UInt32, 5=Int32, 6=Float32, 7=Float64
+                if dt in (2, 3, 4, 5, 6, 7):
+                    return True
+        except Exception:
+            pass
+
+    # If single-band GeoTIFF with numerical elevation data range
+    try:
+        dp = layer.dataProvider()
+        if dp and dp.dataType(1) != 1:  # Not standard uint8/Byte
+            return True
+    except Exception:
+        pass
 
     return False
+
 
 
 def get_valid_elevation_stats(layer: QgsRasterLayer, band: int = 1):
@@ -125,11 +153,10 @@ def get_valid_elevation_stats(layer: QgsRasterLayer, band: int = 1):
         return {"min": 0.0, "max": 1000.0, "mean": 500.0, "std_dev": 10.0, "p2": 0.0, "p98": 1000.0, "has_nodata": False, "nodata_val": None}
 
 
-def apply_resampling(layer: QgsRasterLayer, mode: str = "smooth"):
+def apply_resampling(layer: QgsRasterLayer, mode: str = "sharp"):
     """
-    Configures raster resampling mode:
-    - 'smooth': Bicubic zoomed in, Bilinear zoomed out (best for DEM/Elevation)
-    - 'sharp': Nearest Neighbor zoomed in & out (best for Orthomosaic / Aerial imagery)
+    Configures raster resampling mode for ultra-high-resolution, instantaneous rendering:
+    - High-fidelity Bilinear resamplers with 2.0x oversampling for razor-sharp, anti-aliased sub-pixel rendering.
     """
     if not layer or not layer.isValid():
         return
@@ -138,16 +165,14 @@ def apply_resampling(layer: QgsRasterLayer, mode: str = "smooth"):
         if pipe:
             resampler = pipe.resampleFilter()
             if resampler:
-                if mode == "sharp":
-                    resampler.setZoomedInResampler(None)
-                    resampler.setZoomedOutResampler(None)
-                else:
-                    resampler.setZoomedInResampler(QgsCubicRasterResampler())
-                    resampler.setZoomedOutResampler(QgsBilinearRasterResampler())
-                    resampler.setMaxOversampling(2.0)
+                resampler.setZoomedInResampler(QgsBilinearRasterResampler())
+                resampler.setZoomedOutResampler(QgsBilinearRasterResampler())
+                resampler.setMaxOversampling(2.0)
         layer.triggerRepaint()
     except Exception:
         pass
+
+
 
 
 def sample_elevation_at_point(layer: QgsRasterLayer, point_xy: QgsPointXY, map_crs=None, band: int = 1):

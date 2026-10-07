@@ -115,6 +115,19 @@ def generate_3d_shaded_relief_file(
         dx_cell = abs(gt[1]) if abs(gt[1]) > 0 else 1.0
         dy_cell = abs(gt[5]) if abs(gt[5]) > 0 else 1.0
 
+        # Check if coordinates are in degrees (WGS84 / geographic CRS)
+        # In geographic CRS, cell size is in degrees (< 0.1), while elevation dz is in meters.
+        center_lat = gt[3] + (height / 2.0) * gt[5]
+        if dx_cell < 0.1 and abs(center_lat) <= 90.0:
+            lat_rad = np.radians(center_lat)
+            meters_per_deg_y = 111320.0
+            meters_per_deg_x = 111320.0 * max(0.01, float(np.cos(lat_rad)))
+            dx_m = dx_cell * meters_per_deg_x
+            dy_m = dy_cell * meters_per_deg_y
+        else:
+            dx_m = dx_cell
+            dy_m = dy_cell
+
         if z_factor is None or z_factor <= 0:
             if dz <= 10.0:
                 z_factor = 8.0
@@ -130,7 +143,7 @@ def generate_3d_shaded_relief_file(
         # Replace invalid with mean for gradient calculation
         mean_val = float(np.mean(valid_data))
         fill_data = np.where(valid_mask, data, mean_val)
-        dy, dx = np.gradient(fill_data, dy_cell, dx_cell)
+        dy, dx = np.gradient(fill_data, dy_m, dx_m)
         slope = np.pi / 2.0 - np.arctan(np.sqrt(dx * dx + dy * dy) * z_factor)
         aspect = np.arctan2(-dx, dy)
 

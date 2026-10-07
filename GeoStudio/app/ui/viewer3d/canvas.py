@@ -82,8 +82,8 @@ class GLPointCloudCanvas(QOpenGLWidget):
             self.current_colors = self.z_colors
 
         if self.pts_xyz is not None and len(self.pts_xyz) > 0:
-            max_extent = float(np.max(np.abs(self.pts_xyz)))
-            self.zoom_dist = max(50.0, max_extent * 2.2)
+            max_extent = float(np.percentile(np.abs(self.pts_xyz), 98))
+            self.zoom_dist = max(30.0, max_extent * 2.2)
             self.pan_x = 0.0
             self.pan_y = 0.0
 
@@ -93,13 +93,16 @@ class GLPointCloudCanvas(QOpenGLWidget):
         # Look up directly in color_dict or fallback to standard properties
         if mode_str in self.color_dict:
             self.current_colors = self.color_dict[mode_str]
-        elif mode_str in ["RGB", "RGB (True Color)"] and self.rgb_colors is not None:
-            self.current_colors = self.rgb_colors
-        elif mode_str in ["Elevation", "Elevation (Turbo Ramp)"]:
+        elif mode_str in ["RGB", "RGB (True Color)", "Color Lidar by RGB/Elev", "rgb_elev", "RGB / Elevation Hybrid"]:
+            if self.rgb_colors is not None and not np.all(self.rgb_colors == 0):
+                self.current_colors = self.rgb_colors
+            else:
+                self.current_colors = self.z_colors
+        elif mode_str in ["Elevation", "Elevation (Turbo Ramp)", "elevation"]:
             self.current_colors = self.z_colors
-        elif mode_str in ["Classification", "Classification (ASPRS)"] and self.class_colors is not None:
+        elif mode_str in ["Classification", "Classification (ASPRS)", "classification"] and self.class_colors is not None:
             self.current_colors = self.class_colors
-        elif mode_str in ["Intensity", "Intensity (Laser Return)"] and self.intensity_colors is not None:
+        elif mode_str in ["Intensity", "Intensity (Laser Return)", "intensity"] and self.intensity_colors is not None:
             self.current_colors = self.intensity_colors
         else:
             self.current_colors = self.z_colors
@@ -162,43 +165,58 @@ class GLPointCloudCanvas(QOpenGLWidget):
         glViewport(0, 0, w, max(1, h))
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
-        gluPerspective(45.0, w / max(1.0, float(h)), 1.0, 500000.0)
+        gluPerspective(45.0, w / max(1.0, float(h)), 1.0, 50000.0)
         glMatrixMode(GL_MODELVIEW)
 
     def paintGL(self):
         glClearColor(*self.bg_color)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+        # Dynamic perspective near/far plane based on current zoom distance (prevents Z-fighting / depth flicker)
+        w = max(1, self.width())
+        h = max(1, self.height())
+        z_near = max(0.5, float(self.zoom_dist * 0.02))
+        z_far = max(2000.0, float(self.zoom_dist * 15.0))
+
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        gluPerspective(45.0, w / float(h), z_near, z_far)
+        glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
 
         glTranslatef(self.pan_x, self.pan_y, -self.zoom_dist)
         glRotatef(self.rot_x, 1.0, 0.0, 0.0)
         glRotatef(self.rot_z, 0.0, 0.0, 1.0)
 
+        glPushMatrix()
+        glScalef(1.0, 1.0, float(self.z_exaggeration))
+
         if self.show_grid:
             self._draw_grid()
 
         if self.pts_xyz is not None and len(self.pts_xyz) > 0:
             glPointSize(float(self.point_size))
-
-            glPushMatrix()
-            glScalef(1.0, 1.0, float(self.z_exaggeration))
+            glDisable(GL_BLEND)
+            glDisable(GL_POINT_SMOOTH)
+            glEnable(GL_DEPTH_TEST)
+            glDepthFunc(GL_LEQUAL)
 
             try:
                 glEnableClientState(GL_VERTEX_ARRAY)
-                glEnableClientState(GL_COLOR_ARRAY)
-
                 pts = np.ascontiguousarray(self.pts_xyz, dtype=np.float32)
                 glVertexPointer(3, GL_FLOAT, 0, pts)
 
                 colors = self.current_colors if (self.current_colors is not None and len(self.current_colors) == len(self.pts_xyz)) else self.z_colors
                 if colors is not None and len(colors) == len(self.pts_xyz):
+                    glEnableClientState(GL_COLOR_ARRAY)
                     col = np.ascontiguousarray(colors, dtype=np.float32)
                     glColorPointer(3, GL_FLOAT, 0, col)
                 else:
-                    glColor3f(0.85, 0.85, 0.85)
+                    glDisableClientState(GL_COLOR_ARRAY)
+                    glColor3f(0.25, 0.85, 0.45)
 
                 glDrawArrays(GL_POINTS, 0, len(self.pts_xyz))
-            except Exception as e:
+            except Exception:
                 pass
             finally:
                 glDisableClientState(GL_COLOR_ARRAY)
@@ -207,30 +225,40 @@ class GLPointCloudCanvas(QOpenGLWidget):
             if self.show_bbox:
                 self._draw_bounding_box()
 
-            glPopMatrix()
+        glPopMatrix()
 
     def _draw_grid(self):
+        if self.pts_xyz is not None and len(self.pts_xyz) > 0:
+            min_v = np.min(self.pts_xyz, axis=0)
+            max_v = np.max(self.pts_xyz, axis=0)
+            max_extent = max(float(max_v[0] - min_v[0]), float(max_v[1] - min_v[1]))
+            grid_size = max(50.0, float(max_extent * 0.65))
+            z_floor = float(min_v[2])
+        else:
+            grid_size = 250.0
+            z_floor = 0.0
+
         glLineWidth(1.0)
         glColor4f(0.3, 0.4, 0.5, 0.25)
-        grid_size = 250.0
-        step = 25.0
+        step = max(5.0, grid_size / 10.0)
 
         glBegin(GL_LINES)
         x = -grid_size
         while x <= grid_size:
-            glVertex3f(x, -grid_size, 0.0)
-            glVertex3f(x, grid_size, 0.0)
-            glVertex3f(-grid_size, x, 0.0)
-            glVertex3f(grid_size, x, 0.0)
+            glVertex3f(x, -grid_size, z_floor)
+            glVertex3f(x, grid_size, z_floor)
+            glVertex3f(-grid_size, x, z_floor)
+            glVertex3f(grid_size, x, z_floor)
             x += step
         glEnd()
 
-        # Center Axes (X=Red, Y=Green, Z=Blue)
+        # Center Origin Coordinate Triad (X=Red, Y=Green, Z=Blue) at geometric center (0, 0, 0)
+        axis_len = max(20.0, grid_size * 0.20)
         glLineWidth(2.5)
         glBegin(GL_LINES)
-        glColor3f(0.9, 0.2, 0.2); glVertex3f(0, 0, 0); glVertex3f(40, 0, 0)
-        glColor3f(0.2, 0.8, 0.2); glVertex3f(0, 0, 0); glVertex3f(0, 40, 0)
-        glColor3f(0.2, 0.5, 0.9); glVertex3f(0, 0, 0); glVertex3f(0, 0, 40)
+        glColor3f(0.95, 0.2, 0.2); glVertex3f(0, 0, 0); glVertex3f(axis_len, 0, 0)
+        glColor3f(0.2, 0.85, 0.2); glVertex3f(0, 0, 0); glVertex3f(0, axis_len, 0)
+        glColor3f(0.2, 0.55, 0.95); glVertex3f(0, 0, 0); glVertex3f(0, 0, axis_len)
         glEnd()
 
     def _draw_bounding_box(self):
@@ -239,6 +267,7 @@ class GLPointCloudCanvas(QOpenGLWidget):
         min_v = np.min(self.pts_xyz, axis=0)
         max_v = np.max(self.pts_xyz, axis=0)
 
+        glDepthMask(GL_FALSE)
         glColor4f(0.4, 0.6, 0.8, 0.35)
         glLineWidth(1.2)
 
@@ -253,6 +282,7 @@ class GLPointCloudCanvas(QOpenGLWidget):
         glVertex3f(x1, y1, z0); glVertex3f(x1, y1, z1)
         glVertex3f(x0, y1, z0); glVertex3f(x0, y1, z1)
         glEnd()
+        glDepthMask(GL_TRUE)
 
     # ── Interactive Mouse Navigation ────────────────────────────
     def mousePressEvent(self, event):

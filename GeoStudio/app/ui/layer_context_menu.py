@@ -104,33 +104,40 @@ class LayerContextMenuHandler:
     @staticmethod
     def open_dem_dialog(panel, layer=None):
         if not layer:
-            layer = panel.get_active_layer()
-        if not layer:
-            return
-        from ui.dem_elevation_dialog import DemElevationDialog
-        dlg = DemElevationDialog(layer, parent=panel)
-        dlg.exec_()
-        panel.refresh()
+            layer = panel.get_active_layer() if hasattr(panel, "get_active_layer") else None
+        try:
+            from ui.dem_elevation_dialog import DEMElevationDialog
+            canvas = getattr(panel, "map_canvas", None)
+            dlg = DEMElevationDialog(map_canvas=canvas, target_layer=layer, parent=panel)
+            dlg.exec_()
+            if hasattr(panel, "refresh"):
+                panel.refresh()
+        except Exception as e:
+            QMessageBox.critical(panel, "Error", f"Could not open DEM Elevation dialog: {e}")
 
     @staticmethod
     def open_volumetrics(panel, layer=None):
         if not layer:
-            layer = panel.get_active_layer()
-        if not layer:
-            return
-        from ui.volumetric_dialog import VolumetricDialog
-        dlg = VolumetricDialog(layer, parent=panel)
-        dlg.exec_()
+            layer = panel.get_active_layer() if hasattr(panel, "get_active_layer") else None
+        try:
+            from ui.volumetric_dialog import VolumetricAnalysisDialog
+            canvas = getattr(panel, "map_canvas", None)
+            dlg = VolumetricAnalysisDialog(map_canvas=canvas, target_layer=layer, parent=panel)
+            dlg.exec_()
+        except Exception as e:
+            QMessageBox.critical(panel, "Error", f"Could not open Volumetric Analysis dialog: {e}")
 
     @staticmethod
     def open_cut_fill(panel, layer=None):
         if not layer:
-            layer = panel.get_active_layer()
-        if not layer:
-            return
-        from ui.cut_fill_dialog import CutFillDialog
-        dlg = CutFillDialog(layer, parent=panel)
-        dlg.exec_()
+            layer = panel.get_active_layer() if hasattr(panel, "get_active_layer") else None
+        try:
+            from ui.cut_fill_dialog import CutFillDialog
+            canvas = getattr(panel, "map_canvas", None)
+            dlg = CutFillDialog(map_canvas=canvas, target_layer=layer, parent=panel)
+            dlg.exec_()
+        except Exception as e:
+            QMessageBox.critical(panel, "Error", f"Could not open Cut & Fill dialog: {e}")
 
     @staticmethod
     def apply_elevation_preset(panel, layer, preset_key):

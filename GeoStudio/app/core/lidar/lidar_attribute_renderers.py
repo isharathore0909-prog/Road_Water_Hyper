@@ -9,7 +9,7 @@ from qgis.core import (
     QgsUnitTypes
 )
 from .lidar_attributes import (
-    is_point_cloud, find_attr, get_attribute_range, create_shader
+    is_point_cloud, find_attr, get_attribute_range, create_shader, DEFAULT_MAX_SCREEN_ERROR, DEFAULT_POINT_BUDGET
 )
 
 
@@ -19,7 +19,15 @@ def apply_height_above_ground(layer, point_size: float = 3.5) -> bool:
         return False
 
     try:
-        hag_attr = find_attr(layer, ["HeightAboveGround", "HAG", "hag", "NormalizedZ", "normalized_z", "Z"])
+        try:
+            if hasattr(layer, "setMaximumScreenError"):
+                layer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
+            if hasattr(layer, "setPointBudget"):
+                layer.setPointBudget(DEFAULT_POINT_BUDGET)
+        except Exception:
+            pass
+
+        hag_attr = find_attr(layer, ["HeightAboveGround", "HAG", "hag", "NormalizedZ", "normalized_z", "Z"], fallback="Z")
         h_min, h_max = get_attribute_range(layer, hag_attr, 0.0, 35.0)
         if h_min < 0.0:
             h_min = 0.0
@@ -32,12 +40,12 @@ def apply_height_above_ground(layer, point_size: float = 3.5) -> bool:
         renderer.setAttribute(hag_attr)
         renderer.setColorRampShader(shader)
         try:
-            renderer.setPointSymbol(QgsPointCloudAttributeByRampRenderer.PointSymbol.Circle)
+            renderer.setPointSymbol(QgsPointCloudAttributeByRampRenderer.PointSymbol.Square)
         except Exception:
             pass
         renderer.setPointSize(point_size)
         renderer.setPointSizeUnit(QgsUnitTypes.RenderPixels)
-        renderer.setMaximumScreenError(0.3)
+        renderer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
         renderer.setMaximumScreenErrorUnit(QgsUnitTypes.RenderPixels)
 
         layer.setRenderer(renderer)
@@ -53,7 +61,15 @@ def apply_scan_angle(layer, point_size: float = 3.5) -> bool:
     if not is_point_cloud(layer):
         return False
     try:
-        attr = find_attr(layer, ["ScanAngleRank", "ScanAngle", "scan_angle", "scanangle", "ScanAngleDegrees", "Angle"])
+        try:
+            if hasattr(layer, "setMaximumScreenError"):
+                layer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
+            if hasattr(layer, "setPointBudget"):
+                layer.setPointBudget(DEFAULT_POINT_BUDGET)
+        except Exception:
+            pass
+
+        attr = find_attr(layer, ["ScanAngleRank", "ScanAngle", "scan_angle", "scanangle", "ScanAngleDegrees", "Angle", "UserData", "Intensity"], fallback="Intensity")
         s_min, s_max = get_attribute_range(layer, attr, -35.0, 35.0)
         if abs(s_max - s_min) < 0.1:
             s_min, s_max = -35.0, 35.0
@@ -62,9 +78,13 @@ def apply_scan_angle(layer, point_size: float = 3.5) -> bool:
         renderer = QgsPointCloudAttributeByRampRenderer()
         renderer.setAttribute(attr)
         renderer.setColorRampShader(shader)
+        try:
+            renderer.setPointSymbol(QgsPointCloudAttributeByRampRenderer.PointSymbol.Square)
+        except Exception:
+            pass
         renderer.setPointSize(point_size)
         renderer.setPointSizeUnit(QgsUnitTypes.RenderPixels)
-        renderer.setMaximumScreenError(0.3)
+        renderer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
         renderer.setMaximumScreenErrorUnit(QgsUnitTypes.RenderPixels)
 
         layer.setRenderer(renderer)
@@ -80,7 +100,15 @@ def apply_point_source_id(layer, point_size: float = 3.5) -> bool:
     if not is_point_cloud(layer):
         return False
     try:
-        attr = find_attr(layer, ["PointSourceId", "PointSourceID", "point_source_id", "PointSource", "SourceID", "FlightLine"])
+        try:
+            if hasattr(layer, "setMaximumScreenError"):
+                layer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
+            if hasattr(layer, "setPointBudget"):
+                layer.setPointBudget(DEFAULT_POINT_BUDGET)
+        except Exception:
+            pass
+
+        attr = find_attr(layer, ["PointSourceId", "PointSourceID", "point_source_id", "PointSource", "SourceID", "FlightLine", "UserData", "Classification"], fallback="Classification")
         s_min, s_max = get_attribute_range(layer, attr, 1.0, 10.0)
         if s_max <= s_min:
             s_max = s_min + 10.0
@@ -89,9 +117,13 @@ def apply_point_source_id(layer, point_size: float = 3.5) -> bool:
         renderer = QgsPointCloudAttributeByRampRenderer()
         renderer.setAttribute(attr)
         renderer.setColorRampShader(shader)
+        try:
+            renderer.setPointSymbol(QgsPointCloudAttributeByRampRenderer.PointSymbol.Square)
+        except Exception:
+            pass
         renderer.setPointSize(point_size)
         renderer.setPointSizeUnit(QgsUnitTypes.RenderPixels)
-        renderer.setMaximumScreenError(0.3)
+        renderer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
         renderer.setMaximumScreenErrorUnit(QgsUnitTypes.RenderPixels)
 
         layer.setRenderer(renderer)
@@ -107,16 +139,28 @@ def apply_source_layer(layer, point_size: float = 3.5) -> bool:
     if not is_point_cloud(layer):
         return False
     try:
-        attr = find_attr(layer, ["SourceLayer", "source_layer", "LayerId", "FileId", "TileId", "UserData", "PointSourceId"])
+        try:
+            if hasattr(layer, "setMaximumScreenError"):
+                layer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
+            if hasattr(layer, "setPointBudget"):
+                layer.setPointBudget(DEFAULT_POINT_BUDGET)
+        except Exception:
+            pass
+
+        attr = find_attr(layer, ["SourceLayer", "source_layer", "LayerId", "FileId", "TileId", "UserData", "PointSourceId", "Classification"], fallback="PointSourceId")
         s_min, s_max = get_attribute_range(layer, attr, 0.0, 10.0)
         shader = create_shader(s_min, s_max, ramp_name="Accent", num_stops=12)
 
         renderer = QgsPointCloudAttributeByRampRenderer()
         renderer.setAttribute(attr)
         renderer.setColorRampShader(shader)
+        try:
+            renderer.setPointSymbol(QgsPointCloudAttributeByRampRenderer.PointSymbol.Square)
+        except Exception:
+            pass
         renderer.setPointSize(point_size)
         renderer.setPointSizeUnit(QgsUnitTypes.RenderPixels)
-        renderer.setMaximumScreenError(0.3)
+        renderer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
         renderer.setMaximumScreenErrorUnit(QgsUnitTypes.RenderPixels)
 
         layer.setRenderer(renderer)
@@ -132,16 +176,28 @@ def apply_segment(layer, point_size: float = 3.5) -> bool:
     if not is_point_cloud(layer):
         return False
     try:
-        attr = find_attr(layer, ["Segment", "segment", "SegmentId", "segment_id", "Cluster", "ClusterId", "TreeId", "Class"])
+        try:
+            if hasattr(layer, "setMaximumScreenError"):
+                layer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
+            if hasattr(layer, "setPointBudget"):
+                layer.setPointBudget(DEFAULT_POINT_BUDGET)
+        except Exception:
+            pass
+
+        attr = find_attr(layer, ["Segment", "segment", "SegmentId", "segment_id", "Cluster", "ClusterId", "TreeId", "Class", "Classification", "UserData"], fallback="Classification")
         s_min, s_max = get_attribute_range(layer, attr, 0.0, 100.0)
         shader = create_shader(s_min, s_max, ramp_name="Turbo", num_stops=24)
 
         renderer = QgsPointCloudAttributeByRampRenderer()
         renderer.setAttribute(attr)
         renderer.setColorRampShader(shader)
+        try:
+            renderer.setPointSymbol(QgsPointCloudAttributeByRampRenderer.PointSymbol.Square)
+        except Exception:
+            pass
         renderer.setPointSize(point_size)
         renderer.setPointSizeUnit(QgsUnitTypes.RenderPixels)
-        renderer.setMaximumScreenError(0.3)
+        renderer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
         renderer.setMaximumScreenErrorUnit(QgsUnitTypes.RenderPixels)
 
         layer.setRenderer(renderer)
@@ -157,16 +213,28 @@ def apply_point_index(layer, point_size: float = 3.5) -> bool:
     if not is_point_cloud(layer):
         return False
     try:
-        attr = find_attr(layer, ["PointIndex", "point_index", "Index", "index", "GpsTime", "gpstime"])
+        try:
+            if hasattr(layer, "setMaximumScreenError"):
+                layer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
+            if hasattr(layer, "setPointBudget"):
+                layer.setPointBudget(DEFAULT_POINT_BUDGET)
+        except Exception:
+            pass
+
+        attr = find_attr(layer, ["PointIndex", "point_index", "Index", "index", "GpsTime", "gpstime", "Intensity", "Z"], fallback="GpsTime")
         s_min, s_max = get_attribute_range(layer, attr, 0.0, 1000000.0)
         shader = create_shader(s_min, s_max, ramp_name="Spectral", num_stops=16)
 
         renderer = QgsPointCloudAttributeByRampRenderer()
         renderer.setAttribute(attr)
         renderer.setColorRampShader(shader)
+        try:
+            renderer.setPointSymbol(QgsPointCloudAttributeByRampRenderer.PointSymbol.Square)
+        except Exception:
+            pass
         renderer.setPointSize(point_size)
         renderer.setPointSizeUnit(QgsUnitTypes.RenderPixels)
-        renderer.setMaximumScreenError(0.3)
+        renderer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
         renderer.setMaximumScreenErrorUnit(QgsUnitTypes.RenderPixels)
 
         layer.setRenderer(renderer)

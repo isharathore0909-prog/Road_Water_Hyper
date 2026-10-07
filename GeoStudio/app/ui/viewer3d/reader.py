@@ -80,8 +80,8 @@ class PointCloudReader:
         z_max = float(np.max(z_v))
         z_range = max(0.001, z_max - z_min)
 
-        cx = float(np.median(x_v))
-        cy = float(np.median(y_v))
+        cx = float((np.min(x_v) + np.max(x_v)) / 2.0)
+        cy = float((np.min(y_v) + np.max(y_v)) / 2.0)
         cz = float((z_min + z_max) / 2.0)
 
         x_centered = (x_v - cx).astype(np.float32)
@@ -166,12 +166,36 @@ class PointCloudReader:
         if intensity_colors is not None and len(intensity_colors) == len(valid):
             intensity_colors = intensity_colors[valid]
 
+        # Filter extreme spatial outliers (e.g. 0,0 or telemetry errors)
+        p_x0, p_x1 = np.percentile(x, [0.1, 99.9])
+        p_y0, p_y1 = np.percentile(y, [0.1, 99.9])
+        p_z0, p_z1 = np.percentile(z, [0.1, 99.9])
+
+        span_x = max(10.0, p_x1 - p_x0)
+        span_y = max(10.0, p_y1 - p_y0)
+        span_z = max(5.0, p_z1 - p_z0)
+
+        inliers = (x >= p_x0 - span_x * 0.5) & (x <= p_x1 + span_x * 0.5) & \
+                  (y >= p_y0 - span_y * 0.5) & (y <= p_y1 + span_y * 0.5) & \
+                  (z >= p_z0 - span_z * 2.0) & (z <= p_z1 + span_z * 2.0)
+
+        if np.any(inliers):
+            x = x[inliers]
+            y = y[inliers]
+            z = z[inliers]
+            if rgb_colors is not None and len(rgb_colors) == len(inliers):
+                rgb_colors = rgb_colors[inliers]
+            if class_colors is not None and len(class_colors) == len(inliers):
+                class_colors = class_colors[inliers]
+            if intensity_colors is not None and len(intensity_colors) == len(inliers):
+                intensity_colors = intensity_colors[inliers]
+
         z_min = float(np.min(z))
         z_max = float(np.max(z))
         z_range = max(0.001, z_max - z_min)
 
-        cx = float(np.median(x))
-        cy = float(np.median(y))
+        cx = float((np.min(x) + np.max(x)) / 2.0)
+        cy = float((np.min(y) + np.max(y)) / 2.0)
         cz = float((z_min + z_max) / 2.0)
 
         x_centered = (x - cx).astype(np.float32)

@@ -37,6 +37,10 @@ RAMP_STOPS = {
         (0.00, "#f7fbff"), (0.30, "#9ecae1"), (0.60, "#4292c6"),
         (0.85, "#08519c"), (1.00, "#08306b")
     ],
+    "Greys": [
+        (0.00, "#111827"), (0.25, "#334155"), (0.50, "#64748b"),
+        (0.75, "#cbd5e1"), (1.00, "#f8fafc")
+    ],
     "YlOrRd": [
         (0.00, "#ffffb2"), (0.30, "#fecc5c"), (0.60, "#fd8d3c"),
         (0.85, "#f03b20"), (1.00, "#bd0026")
@@ -97,14 +101,14 @@ def configure_lidar_legend(widget, layer, mode: str = None) -> bool:
         widget.setFixedSize(126, 260)
 
     elif mode == "intensity":
-        int_attr = LidarStyler._find_attr(layer, ["Intensity", "intensity", "reflectance"])
-        i_min, i_max = LidarStyler._get_attribute_range(layer, int_attr, 0.0, 255.0)
+        int_attr = LidarStyler._find_attr(layer, ["Intensity", "intensity", "reflectance", "LaserIntensity"], fallback="Intensity")
+        i_min, i_max = LidarStyler._get_attribute_range(layer, int_attr, 0.0, 65535.0)
         widget.legend_type = "gradient"
         widget.title = "Laser Intensity"
         widget.min_val = float(i_min)
         widget.max_val = float(i_max)
         widget.unit_str = ""
-        widget.ramp_name = "Magma"
+        widget.ramp_name = "Greys"
         widget.setFixedSize(126, 260)
 
     elif mode == "classification":
@@ -227,10 +231,10 @@ def configure_lidar_legend(widget, layer, mode: str = None) -> bool:
         widget.legend_type = "discrete"
         widget.title = "Withheld Flag"
         widget.categories = [
-            ("#64748b", "0: Normal Point"),
-            ("#ef4444", "1: Withheld / Corrupt"),
+            ("#10b981", "0: Valid (Not Withheld)"),
+            ("#ef4444", "1: Flagged Outlier / Noise"),
         ]
-        widget.setFixedSize(155, 105)
+        widget.setFixedSize(165, 105)
 
     elif mode == "keypoint":
         widget.legend_type = "discrete"

@@ -277,11 +277,16 @@ class DEMElevationDialog(QDialog):
                 layer, band=1, stretch_type=self.gray_mode_combo.currentData()
             )
 
+        target_l = success if (success and hasattr(success, "isValid")) else layer
         if success and self.map_canvas:
             if hasattr(self.map_canvas, 'update_elevation_legend'):
-                self.map_canvas.update_elevation_legend(layer)
+                self.map_canvas.update_elevation_legend(target_l)
             self.map_canvas.refresh_canvas()
 
     def _on_ok(self):
         self.apply_style()
         self.accept()
+
+
+# Backward compatibility alias
+DemElevationDialog = DEMElevationDialog

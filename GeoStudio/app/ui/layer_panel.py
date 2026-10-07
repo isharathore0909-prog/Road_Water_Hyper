@@ -267,3 +267,12 @@ class LayerPanelWidget(QWidget):
         layer = self.get_active_layer()
         if layer:
             LayerContextMenuHandler.show_props(self, layer)
+
+    def apply_elevation_preset(self, layer, preset_key):
+        LayerContextMenuHandler.apply_elevation_preset(self, layer, preset_key)
+
+    def _apply_elevation_preset(self, layer, preset_key):
+        LayerContextMenuHandler.apply_elevation_preset(self, layer, preset_key)
+
+    def open_dem_dialog(self, layer=None):
+        LayerContextMenuHandler.open_dem_dialog(self, layer)

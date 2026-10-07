@@ -77,6 +77,16 @@ class CanvasNavigationManager:
         try:
             if not layer.isValid():
                 return
+
+            # Ensure layer has a valid CRS if coordinates are projected or unreferenced
+            if not layer.crs().isValid() or not layer.crs().authid():
+                from qgis.core import QgsCoordinateReferenceSystem
+                ext = layer.extent()
+                if ext.xMinimum() > 180.0 or ext.yMinimum() > 90.0 or ext.xMaximum() > 180.0 or ext.yMinimum() < -90.0:
+                    layer.setCrs(QgsCoordinateReferenceSystem("EPSG:32643"))
+                else:
+                    layer.setCrs(QgsCoordinateReferenceSystem("EPSG:4326"))
+
             if layer.crs().isValid():
                 dest_crs = layer.crs()
                 self.canvas.setDestinationCrs(dest_crs)
@@ -102,8 +112,10 @@ class CanvasNavigationManager:
             extent.scale(1.05)
             self.canvas.setExtent(extent)
             self.canvas.refresh()
+            self.canvas.update()
         except Exception:
             pass
+
 
     def zoom_to_active_layer(self, layer=None):
         if layer and layer.isValid():

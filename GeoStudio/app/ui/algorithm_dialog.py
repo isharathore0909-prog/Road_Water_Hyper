@@ -139,7 +139,8 @@ class QgisAlgorithmDialog(QDialog):
         help_layout.setContentsMargins(14, 14, 14, 14)
         help_text = QTextEdit()
         help_text.setReadOnly(True)
-        help_content = f"<h3>{self.algo.name}</h3><p><b>Group:</b> {self.algo.group}</p><p><b>Algorithm ID:</b> <code>{self.algo.algo_id}</code></p><p>{self.algo.description}</p>"
+        grp = getattr(self.algo, "group", None) or getattr(self.algo, "category", "Processing")
+        help_content = f"<h3>{self.algo.name}</h3><p><b>Group:</b> {grp}</p><p><b>Algorithm ID:</b> <code>{self.algo.algo_id}</code></p><p>{self.algo.description}</p>"
         help_text.setHtml(help_content)
         help_layout.addWidget(help_text)
         self.tabs.addTab(self.help_tab, "Help")

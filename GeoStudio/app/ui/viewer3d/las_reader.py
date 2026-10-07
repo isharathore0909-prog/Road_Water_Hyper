@@ -40,17 +40,22 @@ def load_las_points_data(file_path: str, max_points: int = 8000000):
 
             has_rgb = hasattr(las, 'red') and hasattr(las, 'green') and hasattr(las, 'blue')
             if has_rgb:
-                r_raw = np.array(las.red[::step])
-                g_raw = np.array(las.green[::step])
-                b_raw = np.array(las.blue[::step])
-                if np.max(r_raw) > 255 or np.max(g_raw) > 255 or np.max(b_raw) > 255:
-                    r = (r_raw >> 8).astype(np.float32) / 255.0
-                    g = (g_raw >> 8).astype(np.float32) / 255.0
-                    b = (b_raw >> 8).astype(np.float32) / 255.0
+                r_raw = np.array(las.red[::step], dtype=np.float32)
+                g_raw = np.array(las.green[::step], dtype=np.float32)
+                b_raw = np.array(las.blue[::step], dtype=np.float32)
+                max_c = max(float(np.max(r_raw)), float(np.max(g_raw)), float(np.max(b_raw)))
+                if max_c > 255.0:
+                    all_c = np.concatenate([r_raw, g_raw, b_raw])
+                    p1 = max(0.0, float(np.percentile(all_c, 1)))
+                    p99 = min(65535.0, float(np.percentile(all_c, 99)))
+                    rng = max(1.0, p99 - p1)
+                    r = np.clip((r_raw - p1) / rng, 0.0, 1.0).astype(np.float32)
+                    g = np.clip((g_raw - p1) / rng, 0.0, 1.0).astype(np.float32)
+                    b = np.clip((b_raw - p1) / rng, 0.0, 1.0).astype(np.float32)
                 else:
-                    r = r_raw.astype(np.float32) / 255.0
-                    g = g_raw.astype(np.float32) / 255.0
-                    b = b_raw.astype(np.float32) / 255.0
+                    r = (r_raw / 255.0).astype(np.float32)
+                    g = (g_raw / 255.0).astype(np.float32)
+                    b = (b_raw / 255.0).astype(np.float32)
                 rgb_colors = np.column_stack((r, g, b)).astype(np.float32)
             else:
                 rgb_colors = None

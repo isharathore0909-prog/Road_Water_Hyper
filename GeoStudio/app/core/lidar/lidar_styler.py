@@ -12,7 +12,7 @@ from qgis.core import (
 
 from .lidar_attributes import (
     is_point_cloud, get_attribute_names, find_attr, get_attribute_range,
-    create_shader, set_point_size
+    create_shader, set_point_size, DEFAULT_MAX_SCREEN_ERROR, DEFAULT_POINT_BUDGET
 )
 from .lidar_renderers import (
     apply_rgb, apply_classification, apply_return_number, apply_height_above_ground,
@@ -54,15 +54,23 @@ class LidarStyler:
 
     @staticmethod
     def auto_style(layer, point_size: float = 3.5) -> bool:
-        """Automatically select the best renderer for the point cloud."""
+        """Automatically style point cloud in True Color RGB on first load, falling back to Elevation Turbo."""
         if not is_point_cloud(layer):
             return False
 
-        attrs = [a.lower() for a in get_attribute_names(layer)]
-        if attrs and "red" in attrs and "green" in attrs and "blue" in attrs:
-            if apply_rgb(layer, point_size=point_size):
-                return True
+        try:
+            if hasattr(layer, "setMaximumScreenError"):
+                layer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
+            if hasattr(layer, "setPointBudget"):
+                layer.setPointBudget(DEFAULT_POINT_BUDGET)
+        except Exception:
+            pass
 
+        # Check for valid True Color RGB first
+        if apply_rgb(layer, point_size=point_size):
+            return True
+
+        # Fallback to vibrant Elevation Turbo Color Ramp
         return LidarStyler.apply_elevation_ramp(layer, ramp_name="Turbo", point_size=point_size)
 
     @staticmethod
@@ -70,20 +78,28 @@ class LidarStyler:
         """Render point cloud with RGB true color if present, otherwise fall back to elevation ramp."""
         if not is_point_cloud(layer):
             return False
-        attrs = [a.lower() for a in get_attribute_names(layer)]
-        if "red" in attrs and "green" in attrs and "blue" in attrs:
+        from .lidar_attributes import has_valid_rgb
+        if has_valid_rgb(layer):
             if apply_rgb(layer, point_size=point_size):
                 return True
         return LidarStyler.apply_elevation_ramp(layer, ramp_name="Turbo", point_size=point_size)
 
     @staticmethod
     def apply_elevation_ramp(layer, ramp_name: str = "Turbo", point_size: float = 3.5) -> bool:
-        """Render point cloud colored by elevation (Z attribute)."""
+        """Render point cloud colored by elevation (Z attribute) with seamless solid splatting."""
         if not is_point_cloud(layer):
             return False
 
         try:
-            z_attr = find_attr(layer, ["Z", "Elevation", "Height"])
+            try:
+                if hasattr(layer, "setMaximumScreenError"):
+                    layer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
+                if hasattr(layer, "setPointBudget"):
+                    layer.setPointBudget(DEFAULT_POINT_BUDGET)
+            except Exception:
+                pass
+
+            z_attr = find_attr(layer, ["Z", "Elevation", "Height", "z"], fallback="Z")
             z_min, z_max = get_attribute_range(layer, z_attr, 0.0, 100.0)
 
             shader = create_shader(z_min, z_max, ramp_name=ramp_name, num_stops=16)
@@ -92,12 +108,12 @@ class LidarStyler:
             renderer.setAttribute(z_attr)
             renderer.setColorRampShader(shader)
             try:
-                renderer.setPointSymbol(QgsPointCloudAttributeByRampRenderer.PointSymbol.Circle)
+                renderer.setPointSymbol(QgsPointCloudAttributeByRampRenderer.PointSymbol.Square)
             except Exception:
                 pass
             renderer.setPointSize(point_size)
             renderer.setPointSizeUnit(QgsUnitTypes.RenderPixels)
-            renderer.setMaximumScreenError(0.3)
+            renderer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
             renderer.setMaximumScreenErrorUnit(QgsUnitTypes.RenderPixels)
 
             layer.setRenderer(renderer)
@@ -109,32 +125,37 @@ class LidarStyler:
 
     @staticmethod
     def apply_intensity_ramp(layer, point_size: float = 3.5) -> bool:
-        """Render point cloud colored by laser return intensity."""
+        """Render point cloud colored by laser return intensity with dynamic contrast range."""
         if not is_point_cloud(layer):
             return False
 
         try:
-            int_attr = find_attr(layer, ["Intensity", "intensity", "reflectance"])
-            i_min, i_max = get_attribute_range(layer, int_attr, 0.0, 255.0)
-            if i_max <= 1.0:
-                i_min, i_max = 0.0, 1.0
-            elif i_max > 255.0 and i_max <= 4095.0:
-                i_min, i_max = 0.0, 4095.0
-            elif i_max > 4095.0:
-                i_min, i_max = 0.0, 65535.0
+            try:
+                if hasattr(layer, "setMaximumScreenError"):
+                    layer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
+                if hasattr(layer, "setPointBudget"):
+                    layer.setPointBudget(DEFAULT_POINT_BUDGET)
+            except Exception:
+                pass
 
-            shader = create_shader(i_min, i_max, ramp_name="Magma", num_stops=16)
+            int_attr = find_attr(layer, ["Intensity", "intensity", "reflectance", "LaserIntensity"], fallback="Intensity")
+            i_min, i_max = get_attribute_range(layer, int_attr, 0.0, 4095.0)
+            if i_max <= i_min:
+                i_max = i_min + 255.0
+
+            # Generate high-contrast laser intensity shader (Dark-to-Light: Greys inverted)
+            shader = create_shader(i_min, i_max, ramp_name="Greys", num_stops=16, invert=True)
 
             renderer = QgsPointCloudAttributeByRampRenderer()
             renderer.setAttribute(int_attr)
             renderer.setColorRampShader(shader)
             try:
-                renderer.setPointSymbol(QgsPointCloudAttributeByRampRenderer.PointSymbol.Circle)
+                renderer.setPointSymbol(QgsPointCloudAttributeByRampRenderer.PointSymbol.Square)
             except Exception:
                 pass
             renderer.setPointSize(point_size)
             renderer.setPointSizeUnit(QgsUnitTypes.RenderPixels)
-            renderer.setMaximumScreenError(0.3)
+            renderer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
             renderer.setMaximumScreenErrorUnit(QgsUnitTypes.RenderPixels)
 
             layer.setRenderer(renderer)
@@ -143,3 +164,4 @@ class LidarStyler:
         except Exception as e:
             print(f"[LidarStyler] Error applying intensity ramp: {e}")
             return False
+

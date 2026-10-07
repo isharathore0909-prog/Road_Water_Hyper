@@ -107,6 +107,31 @@ class CudaDetector:
         return info
 
     @classmethod
+    def is_cuda_available(cls) -> bool:
+        """Returns True if a compatible CUDA GPU is available."""
+        return cls.get_gpu_info().get("cuda_available", False)
+
+    @classmethod
+    def get_device_name(cls) -> str:
+        """Returns the primary GPU device name."""
+        return cls.get_gpu_info().get("device_name", "CPU Only")
+
+    @classmethod
+    def get_device_count(cls) -> int:
+        """Returns the number of detected GPU devices."""
+        return cls.get_gpu_info().get("device_count", 0)
+
+    @classmethod
+    def get_total_vram_mb(cls) -> float:
+        """Returns total VRAM in megabytes."""
+        return cls.get_gpu_info().get("total_vram_mb", 0.0)
+
+    @classmethod
+    def get_free_vram_mb(cls) -> float:
+        """Returns free VRAM in megabytes."""
+        return cls.get_gpu_info().get("free_vram_mb", 0.0)
+
+    @classmethod
     def get_live_free_vram_bytes(cls) -> int:
         """Query currently available free VRAM bytes dynamically."""
         try:
@@ -126,3 +151,23 @@ class CudaDetector:
 
         info = cls.get_gpu_info()
         return info.get("free_vram_bytes", 0)
+
+
+class HardwareInfo:
+    """Dataclass holding structured hardware info."""
+    def __init__(self, is_cuda_available: bool, device_name: str, vram_total_gb: float, vram_free_gb: float):
+        self.is_cuda_available = is_cuda_available
+        self.device_name = device_name
+        self.vram_total_gb = vram_total_gb
+        self.vram_free_gb = vram_free_gb
+
+
+def get_cuda_hardware_info() -> HardwareInfo:
+    """Helper function to get hardware acceleration status."""
+    info = CudaDetector.get_gpu_info()
+    return HardwareInfo(
+        is_cuda_available=info.get("cuda_available", False),
+        device_name=info.get("device_name", "CPU Only"),
+        vram_total_gb=info.get("total_vram_mb", 0.0) / 1024.0,
+        vram_free_gb=info.get("free_vram_mb", 0.0) / 1024.0
+    )

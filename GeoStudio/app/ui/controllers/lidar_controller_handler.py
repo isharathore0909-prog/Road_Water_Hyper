@@ -59,8 +59,8 @@ class LidarControllerHandler:
                 elif mode_key == "rgb":
                     applied = LidarStyler.apply_rgb(layer)
                     if not applied:
-                        parent_window.geo_status.showMessage("⚠ This point cloud has no embedded Red/Green/Blue color channels.", 4000)
-                        return
+                        applied = LidarStyler.apply_rgb_elev(layer)
+                        parent_window.geo_status.showMessage("⚠ Point cloud has no embedded RGB channels — displaying Elevation Turbo palette.", 4000)
                 elif mode_key == "classification":
                     applied = LidarStyler.apply_classification(layer)
                     source_file = getattr(layer, "source", lambda: "")()

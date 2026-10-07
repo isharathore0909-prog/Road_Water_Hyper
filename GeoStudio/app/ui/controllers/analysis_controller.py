@@ -11,16 +11,33 @@ class AnalysisControllerMixin:
     """Handles Terrain, DEM styler, Satellite, LiDAR and geoprocessing algorithm dialogs."""
 
     def apply_shader_preset(self, preset_key: str):
-        layer = self.layer_panel.get_active_layer()
+        layer = self.layer_panel.get_active_layer() if hasattr(self, "layer_panel") else None
+        if not layer:
+            from qgis.core import QgsProject, QgsRasterLayer
+            from core.elevation_styler import ElevationStyler
+            for l in QgsProject.instance().mapLayers().values():
+                if isinstance(l, QgsRasterLayer) and ElevationStyler.is_dem_or_elevation(l):
+                    layer = l
+                    break
         if not layer:
             self._info("Please select a DEM/Elevation raster layer first.")
             return
-        self.layer_panel._apply_elevation_preset(layer, preset_key)
-        self.geo_status.showMessage(f"Applied terrain shader: {preset_key}", 2500)
+        if hasattr(self, "layer_panel") and hasattr(self.layer_panel, "apply_elevation_preset"):
+            self.layer_panel.apply_elevation_preset(layer, preset_key)
+        else:
+            from ui.layer_context_menu import LayerContextMenuHandler
+            LayerContextMenuHandler.apply_elevation_preset(getattr(self, "layer_panel", None), layer, preset_key)
+        if hasattr(self, "geo_status") and self.geo_status:
+            self.geo_status.showMessage(f"Applied terrain shader: {preset_key}", 2500)
 
-    def open_dem_elevation_dialog(self):
-        layer = self.layer_panel.get_active_layer()
-        self.layer_panel.open_dem_dialog(layer)
+    def open_dem_elevation_dialog(self, layer=None):
+        target = layer or (self.layer_panel.get_active_layer() if hasattr(self, "layer_panel") else None)
+        try:
+            from ui.dem_elevation_dialog import DEMElevationDialog
+            dlg = DEMElevationDialog(map_canvas=getattr(self, "map_canvas", None), target_layer=target, parent=self)
+            dlg.exec_()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not open DEM Elevation dialog: {e}")
 
     def open_slope_dialog(self):        self.processing_dock.open_algorithm("native:slope")
     def open_aspect_dialog(self):       self.processing_dock.open_algorithm("native:aspect")

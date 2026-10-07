@@ -42,19 +42,39 @@ class MapCanvasWidget(QWidget):
 
         try:
             from qgis.gui import QgsMapCanvas, QgsLayerTreeMapCanvasBridge
-            from qgis.core import QgsProject, QgsCoordinateReferenceSystem
+            from qgis.core import QgsProject, QgsCoordinateReferenceSystem, QgsMapSettings, QgsSettings
+            from PyQt5.QtWidgets import QApplication
+
+            # Global QGIS rendering thread pool and caching configuration
+            try:
+                qsettings = QgsSettings()
+                qsettings.setValue("qgis/parallel_rendering", True)
+                qsettings.setValue("qgis/preview_jobs", False)
+                qsettings.setValue("qgis/map_update_interval", 50)
+                qsettings.setValue("qgis/enable_render_caching", True)
+                qsettings.setValue("qgis/max_threads", 8)
+            except Exception:
+                pass
 
             self.canvas = QgsMapCanvas(self)
             self.canvas.setCanvasColor(QColor("#ffffff"))
-            self.canvas.enableAntiAliasing(True)
-            self.canvas.setWheelFactor(1.2)
+            self.canvas.enableAntiAliasing(False)  # High-speed point sprite rendering
+            self.canvas.setWheelFactor(1.15)
 
+            # High-resolution, flicker-free & crisp rendering configuration
             try:
+                screen = QApplication.primaryScreen()
+                if screen:
+                    dpi = screen.logicalDotsPerInch()
+                    self.canvas.mapSettings().setOutputDpi(dpi)
+                self.canvas.mapSettings().setFlag(QgsMapSettings.Antialiasing, False)
                 self.canvas.setParallelRenderingEnabled(True)
                 self.canvas.setCachingEnabled(True)
-                self.canvas.setMapUpdateInterval(100)
+                self.canvas.setPreviewJobsEnabled(False)
+                self.canvas.setMapUpdateInterval(50)  # Responsive 50ms progressive refresh
             except Exception:
                 pass
+
 
             self.canvas.xyCoordinates.connect(self._on_coord_changed)
 
@@ -79,6 +99,7 @@ class MapCanvasWidget(QWidget):
             proj.layersAdded.connect(self._on_layers_added)
             proj.layersRemoved.connect(self._on_layers_changed)
             proj.crsChanged.connect(self._on_project_crs_changed)
+
 
         except ImportError as e:
             lbl = QLabel(f"⚠ QGIS canvas not available: {e}\nRun via GeoStudio.bat to load QGIS engine.")
@@ -210,15 +231,6 @@ class MapCanvasWidget(QWidget):
         if not self.canvas:
             return
         try:
-            from PyQt5.QtWidgets import QApplication
-            if self.bridge:
-                self.bridge.setCanvasLayers()
-            try:
-                self.canvas.clearCache()
-            except Exception:
-                pass
-            self.canvas.refresh()
-            QApplication.processEvents()
             self.canvas.refresh()
         except Exception:
             pass
@@ -277,3 +289,25 @@ class MapCanvasWidget(QWidget):
         except Exception:
             pass
         return "EPSG:4326"
+
+    def wait_for_render_complete(self, callback, timeout_ms: int = 4000):
+        """Executes callback when the canvas completes rendering the current view."""
+        if not self.canvas:
+            callback()
+            return
+
+        from PyQt5.QtCore import QTimer
+        triggered = [False]
+
+        def _on_done():
+            if not triggered[0]:
+                triggered[0] = True
+                try:
+                    self.canvas.mapCanvasRefreshed.disconnect(_on_done)
+                except Exception:
+                    pass
+                callback()
+
+        self.canvas.mapCanvasRefreshed.connect(_on_done)
+        QTimer.singleShot(timeout_ms, _on_done)
+

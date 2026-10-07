@@ -50,7 +50,7 @@ class CanvasLayerCoordinator:
         and determines zoom target. Returns the layer to zoom to if any.
         """
         try:
-            from qgis.core import QgsProject
+            from qgis.core import QgsProject, QgsCoordinateReferenceSystem
             proj = QgsProject.instance()
             zoom_target = None
 
@@ -74,6 +74,14 @@ class CanvasLayerCoordinator:
                         zoom_target = layer
                     continue
 
+                # Ensure CRS is valid
+                if not layer.crs().isValid() or not layer.crs().authid():
+                    ext = layer.extent()
+                    if ext.xMinimum() > 180.0 or ext.yMinimum() > 90.0 or ext.xMaximum() > 180.0 or ext.yMinimum() < -90.0:
+                        layer.setCrs(QgsCoordinateReferenceSystem("EPSG:32643"))
+                    else:
+                        layer.setCrs(QgsCoordinateReferenceSystem("EPSG:4326"))
+
                 if layer.crs().isValid():
                     valid_others = [
                         l for l in proj.mapLayers().values() 
@@ -96,9 +104,10 @@ class CanvasLayerCoordinator:
 
             if bridge:
                 bridge.setCanvasLayers()
-            if canvas:
-                all_layers = list(proj.mapLayers().values())
+            elif canvas:
+                all_layers = [l for l in proj.mapLayers().values() if l.isValid()]
                 canvas.setLayers(all_layers)
+
             if zoom_target and nav_mgr:
                 try:
                     if hasattr(zoom_target, "isValid") and zoom_target.isValid():
@@ -106,6 +115,11 @@ class CanvasLayerCoordinator:
                 except RuntimeError:
                     pass
 
+            if canvas:
+                canvas.refresh()
+                canvas.update()
+
             return zoom_target
         except Exception:
             return None
+

@@ -152,3 +152,7 @@ class VolumetricAnalysisDialog(QDialog):
                 QMessageBox.information(self, "Success", f"Saved engineering report to:\n{path}")
             except Exception as e:
                 QMessageBox.critical(self, "Save Error", f"Could not save report:\n{e}")
+
+
+# Backward compatibility alias
+VolumetricDialog = VolumetricAnalysisDialog

@@ -24,14 +24,41 @@ class ProjectControllerMixin:
             self, "Open Project", "", "QGIS Projects (*.qgs *.qgz);;All Files (*)"
         )
         if path:
+            import time
+            fname = os.path.basename(path)
+            sz_str = ""
+            try:
+                sz = os.path.getsize(path)
+                if sz >= 1024 * 1024:
+                    sz_str = f"{sz / (1024 * 1024):.1f} MB"
+                elif sz >= 1024:
+                    sz_str = f"{sz / 1024:.1f} KB"
+            except Exception:
+                pass
+
+            t0 = time.perf_counter()
+            if hasattr(self, "geo_status") and hasattr(self.geo_status, "start_file_loading"):
+                self.geo_status.start_file_loading(fname, sz_str, "Reading project layers & state...")
+
             try:
                 from qgis.core import QgsProject
+                if hasattr(self, "geo_status") and hasattr(self.geo_status, "update_file_loading"):
+                    self.geo_status.update_file_loading(50, "Restoring map canvas layers...")
+
                 QgsProject.instance().read(path)
                 self.layer_panel.refresh()
                 self.map_canvas.refresh_canvas()
-                self.setWindowTitle(f"{self.APP_NAME} — {os.path.basename(path)}")
+                self.setWindowTitle(f"{self.APP_NAME} — {fname}")
+
+                t_elapsed = time.perf_counter() - t0
+                if hasattr(self, "geo_status") and hasattr(self.geo_status, "finish_file_loading"):
+                    self.geo_status.finish_file_loading(fname, t_elapsed, sz_str, "Project")
             except Exception as e:
+                t_elapsed = time.perf_counter() - t0
+                if hasattr(self, "geo_status") and hasattr(self.geo_status, "fail_file_loading"):
+                    self.geo_status.fail_file_loading(fname, t_elapsed, str(e))
                 self._err(f"Could not open project: {e}")
+
 
     def save_project(self):
         try:

@@ -16,7 +16,8 @@ from qgis.core import (
 )
 
 from .lidar_attributes import (
-    is_point_cloud, get_attribute_names, find_attr, get_attribute_range, create_shader
+    is_point_cloud, get_attribute_names, find_attr, get_attribute_range, create_shader,
+    get_rgb_contrast_range, DEFAULT_MAX_SCREEN_ERROR, DEFAULT_POINT_BUDGET
 )
 from .lidar_spectral_renderers import (
     apply_cir as _apply_cir,
@@ -39,57 +40,48 @@ from .lidar_attribute_renderers import (
 
 
 def apply_rgb(layer, point_size: float = 3.5) -> bool:
-    """Render point cloud using embedded True Color RGB channels with auto contrast scaling."""
+    """Render point cloud using embedded True Color RGB channels with native 8/16-bit dynamic scaling."""
     if not is_point_cloud(layer):
         return False
 
-    attrs = [a.lower() for a in get_attribute_names(layer)]
-    if not ("red" in attrs and "green" in attrs and "blue" in attrs):
+    r_name = find_attr(layer, ["Red", "red", "ColorRed", "R"])
+    g_name = find_attr(layer, ["Green", "green", "ColorGreen", "G"])
+    b_name = find_attr(layer, ["Blue", "blue", "ColorBlue", "B"])
+
+    if not (r_name and g_name and b_name):
         return False
 
     try:
+        try:
+            if hasattr(layer, "setMaximumScreenError"):
+                layer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
+            if hasattr(layer, "setPointBudget"):
+                layer.setPointBudget(DEFAULT_POINT_BUDGET)
+        except Exception:
+            pass
+
         renderer = QgsPointCloudRgbRenderer()
-
-        r_name = find_attr(layer, ["Red", "red", "R"])
-        g_name = find_attr(layer, ["Green", "green", "G"])
-        b_name = find_attr(layer, ["Blue", "blue", "B"])
-
         renderer.setRedAttribute(r_name)
         renderer.setGreenAttribute(g_name)
         renderer.setBlueAttribute(b_name)
+
+        min_c, max_c = get_rgb_contrast_range(layer)
+        # Dynamic 8/16-bit ASPRS LAS color contrast enhancement
+        for setter in [renderer.setRedContrastEnhancement, renderer.setGreenContrastEnhancement, renderer.setBlueContrastEnhancement]:
+            ce = QgsContrastEnhancement(Qgis.DataType.UInt16)
+            ce.setContrastEnhancementAlgorithm(QgsContrastEnhancement.StretchToMinimumMaximum, True)
+            ce.setMinimumValue(float(min_c))
+            ce.setMaximumValue(float(max_c))
+            setter(ce)
+
         try:
-            renderer.setPointSymbol(QgsPointCloudRgbRenderer.PointSymbol.Circle)
+            renderer.setPointSymbol(QgsPointCloudRgbRenderer.PointSymbol.Square)
         except Exception:
             pass
         renderer.setPointSize(point_size)
         renderer.setPointSizeUnit(QgsUnitTypes.RenderPixels)
-        renderer.setMaximumScreenError(0.3)
+        renderer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
         renderer.setMaximumScreenErrorUnit(QgsUnitTypes.RenderPixels)
-
-        r_min, r_max = get_attribute_range(layer, r_name, 0.0, 65535.0)
-        g_min, g_max = get_attribute_range(layer, g_name, 0.0, 65535.0)
-        b_min, b_max = get_attribute_range(layer, b_name, 0.0, 65535.0)
-
-        max_channel_val = max(r_max, g_max, b_max)
-        target_max = 65535.0 if max_channel_val > 255.0 or max_channel_val == 0.0 else 255.0
-
-        ce_r = QgsContrastEnhancement(Qgis.DataType.UInt16)
-        ce_r.setContrastEnhancementAlgorithm(QgsContrastEnhancement.StretchToMinimumMaximum, True)
-        ce_r.setMinimumValue(0.0)
-        ce_r.setMaximumValue(target_max)
-        renderer.setRedContrastEnhancement(ce_r)
-
-        ce_g = QgsContrastEnhancement(Qgis.DataType.UInt16)
-        ce_g.setContrastEnhancementAlgorithm(QgsContrastEnhancement.StretchToMinimumMaximum, True)
-        ce_g.setMinimumValue(0.0)
-        ce_g.setMaximumValue(target_max)
-        renderer.setGreenContrastEnhancement(ce_g)
-
-        ce_b = QgsContrastEnhancement(Qgis.DataType.UInt16)
-        ce_b.setContrastEnhancementAlgorithm(QgsContrastEnhancement.StretchToMinimumMaximum, True)
-        ce_b.setMinimumValue(0.0)
-        ce_b.setMaximumValue(target_max)
-        renderer.setBlueContrastEnhancement(ce_b)
 
         layer.setRenderer(renderer)
         layer.triggerRepaint()
@@ -105,12 +97,20 @@ def apply_cir(layer, point_size: float = 3.5) -> bool:
 
 
 def apply_classification(layer, point_size: float = 3.5) -> bool:
-    """Render point cloud using ASPRS LAS standard classification color palette."""
+    """Render point cloud using ASPRS LAS standard classification color palette with solid square splatting."""
     if not is_point_cloud(layer):
         return False
 
     try:
-        class_attr = find_attr(layer, ["Classification", "classification", "class"])
+        try:
+            if hasattr(layer, "setMaximumScreenError"):
+                layer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
+            if hasattr(layer, "setPointBudget"):
+                layer.setPointBudget(DEFAULT_POINT_BUDGET)
+        except Exception:
+            pass
+
+        class_attr = find_attr(layer, ["Classification", "classification", "class"], fallback="Classification")
         categories = [
             QgsPointCloudCategory(0, QColor("#94a3b8"), "0: Never Classified"),
             QgsPointCloudCategory(1, QColor("#cbd5e1"), "1: Unassigned"),
@@ -134,12 +134,12 @@ def apply_classification(layer, point_size: float = 3.5) -> bool:
 
         renderer = QgsPointCloudClassifiedRenderer(class_attr, categories)
         try:
-            renderer.setPointSymbol(QgsPointCloudClassifiedRenderer.PointSymbol.Circle)
+            renderer.setPointSymbol(QgsPointCloudClassifiedRenderer.PointSymbol.Square)
         except Exception:
             pass
         renderer.setPointSize(point_size)
         renderer.setPointSizeUnit(QgsUnitTypes.RenderPixels)
-        renderer.setMaximumScreenError(0.3)
+        renderer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
         renderer.setMaximumScreenErrorUnit(QgsUnitTypes.RenderPixels)
 
         layer.setRenderer(renderer)
@@ -156,7 +156,15 @@ def apply_return_number(layer, point_size: float = 3.5) -> bool:
         return False
 
     try:
-        ret_attr = find_attr(layer, ["ReturnNumber", "returnnumber", "return_number", "Return", "return"])
+        try:
+            if hasattr(layer, "setMaximumScreenError"):
+                layer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
+            if hasattr(layer, "setPointBudget"):
+                layer.setPointBudget(DEFAULT_POINT_BUDGET)
+        except Exception:
+            pass
+
+        ret_attr = find_attr(layer, ["ReturnNumber", "returnnumber", "return_number", "Return", "return"], fallback="ReturnNumber")
         categories = [
             QgsPointCloudCategory(1, QColor("#10b981"), "1: First Return (Canopy/Roof)"),
             QgsPointCloudCategory(2, QColor("#3b82f6"), "2: Second Return"),
@@ -167,12 +175,12 @@ def apply_return_number(layer, point_size: float = 3.5) -> bool:
 
         renderer = QgsPointCloudClassifiedRenderer(ret_attr, categories)
         try:
-            renderer.setPointSymbol(QgsPointCloudClassifiedRenderer.PointSymbol.Circle)
+            renderer.setPointSymbol(QgsPointCloudClassifiedRenderer.PointSymbol.Square)
         except Exception:
             pass
         renderer.setPointSize(point_size)
         renderer.setPointSizeUnit(QgsUnitTypes.RenderPixels)
-        renderer.setMaximumScreenError(0.3)
+        renderer.setMaximumScreenError(DEFAULT_MAX_SCREEN_ERROR)
         renderer.setMaximumScreenErrorUnit(QgsUnitTypes.RenderPixels)
 
         layer.setRenderer(renderer)
