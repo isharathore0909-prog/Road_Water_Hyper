@@ -35,7 +35,14 @@ class NavigationControllerMixin:
         self.map_canvas.set_tool("zoom_out")
 
     def set_identify_tool(self):
-        self.map_canvas.set_tool("identify")
+        from tools.interactive_tools import GeoIdentifyTool
+        tool = GeoIdentifyTool(self.map_canvas.canvas, self)
+        self.map_canvas.canvas.setMapTool(tool)
+        if hasattr(self, "identify_dock"):
+            self.identify_dock.show()
+            self.identify_dock.raise_()
+        if hasattr(self, "geo_status"):
+            self.geo_status.showMessage("Identify Tool: Click on any feature or raster pixel to inspect attributes", 4000)
 
     def set_select_tool(self):
         self.set_select_mode("single")
@@ -53,7 +60,36 @@ class NavigationControllerMixin:
         if layer and hasattr(layer, "removeSelection"):
             layer.removeSelection()
             self.map_canvas.refresh_canvas()
-        self.geo_status.showMessage("Selection cleared", 2000)
+        if hasattr(self, "attr_table_dock") and self.attr_table_dock:
+            self.attr_table_dock.table.clearSelection()
+        if hasattr(self, "geo_status"):
+            self.geo_status.set_selection_count(0)
+            self.geo_status.showMessage("Selection cleared", 2000)
+
+    def select_all_features(self):
+        layer = self.layer_panel.get_active_layer()
+        if layer and hasattr(layer, "selectAll"):
+            layer.selectAll()
+            self.map_canvas.refresh_canvas()
+            if hasattr(self, "geo_status"):
+                self.geo_status.set_selection_count(layer.selectedFeatureCount())
+
+    def invert_selection(self):
+        layer = self.layer_panel.get_active_layer()
+        if layer and hasattr(layer, "invertSelection"):
+            layer.invertSelection()
+            self.map_canvas.refresh_canvas()
+            if hasattr(self, "geo_status"):
+                self.geo_status.set_selection_count(layer.selectedFeatureCount())
+
+    def zoom_to_selection(self):
+        layer = self.layer_panel.get_active_layer()
+        if layer and hasattr(layer, "selectedFeatureCount") and layer.selectedFeatureCount() > 0:
+            box = layer.boundingBoxOfSelected()
+            if not box.isEmpty() and self.map_canvas and self.map_canvas.canvas:
+                box.scale(1.2)
+                self.map_canvas.canvas.setExtent(box)
+                self.map_canvas.canvas.refresh()
 
     def set_measure_distance(self):
         from tools.interactive_tools import GeoMeasureTool

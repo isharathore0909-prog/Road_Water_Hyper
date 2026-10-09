@@ -46,7 +46,7 @@ class UntwineIndexWorker(QThread):
             self.finished_signal.emit(False, "", f"Input file does not exist: {self.input_path}")
             return
 
-        qgis_root = r"C:\Program Files\QGIS 3.40.14"
+        qgis_root = os.environ.get("QGIS_ROOT") or r"C:\Program Files\QGIS 3.44.15"
         untwine_exe = os.path.join(qgis_root, "apps", "qgis-ltr", "untwine.exe")
         bin_dir = os.path.join(qgis_root, "bin")
         qgis_bin = os.path.join(qgis_root, "apps", "qgis-ltr", "bin")

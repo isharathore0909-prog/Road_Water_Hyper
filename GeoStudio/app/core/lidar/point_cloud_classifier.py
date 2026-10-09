@@ -19,7 +19,7 @@ def check_classification_status(file_path: str) -> Dict[str, Any]:
     Returns dict with: 'is_unclassified' (bool), 'max_class' (int), 'min_class' (int).
     """
     try:
-        qgis_root = r"C:\Program Files\QGIS 3.40.14"
+        qgis_root = os.environ.get("QGIS_ROOT") or r"C:\Program Files\QGIS 3.44.15"
         pdal_candidates = [
             os.path.join(qgis_root, "bin", "pdal.exe"),
             os.path.join(qgis_root, "apps", "qgis-ltr", "bin", "pdal.exe"),
@@ -73,7 +73,7 @@ def classify_point_cloud(input_path: str, output_path: Optional[str] = None, pro
             base = input_path[:-9]
         output_path = f"{base}_classified.copc.laz"
 
-    qgis_root = r"C:\Program Files\QGIS 3.40.14"
+    qgis_root = os.environ.get("QGIS_ROOT") or r"C:\Program Files\QGIS 3.44.15"
     pdal_exe = os.path.join(qgis_root, "bin", "pdal.exe")
     if not os.path.exists(pdal_exe):
         pdal_exe = shutil.which("pdal")

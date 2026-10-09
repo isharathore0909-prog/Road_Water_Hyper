@@ -1,8 +1,8 @@
 import sys
 import os
 
-QGIS_ROOT = r"C:\Program Files\QGIS 3.40.14"
-QGIS_APP  = os.path.join(QGIS_ROOT, "apps", "qgis-ltr")
+QGIS_ROOT = os.environ.get("QGIS_ROOT") or r"C:\Program Files\QGIS 3.44.15"
+QGIS_APP  = os.environ.get("QGIS_PREFIX_PATH") or os.path.join(QGIS_ROOT, "apps", "qgis-ltr")
 QGIS_PY   = os.path.join(QGIS_ROOT, "apps", "Python312")
 
 if hasattr(os, 'add_dll_directory'):

@@ -37,7 +37,7 @@ class LayerContextMenuHandler:
         """)
 
         # Common actions
-        act_zoom = menu.addAction("🔍  Zoom to Layer")
+        act_zoom = menu.addAction(get_icon("zoom_in"), "Zoom to Layer")
         act_zoom.triggered.connect(lambda: cls.zoom_to(panel, layer))
 
         from qgis.core import QgsVectorLayer, QgsRasterLayer
@@ -45,58 +45,67 @@ class LayerContextMenuHandler:
         is_point_cloud = "PointCloud" in type(layer).__name__
         is_dem = (not is_vector) and (not is_point_cloud) and ElevationStyler.is_dem_or_elevation(layer)
 
+        if is_vector:
+            act_table = menu.addAction(get_icon("layer_properties"), "Open Attribute Table")
+            act_table.triggered.connect(lambda: cls.open_attr_table(panel, layer))
+            act_color = menu.addAction("Change Symbology Color...")
+            act_color.triggered.connect(lambda: cls.change_color(panel, layer))
+
         if is_dem:
             menu.addSeparator()
-            act_elev_dlg = menu.addAction("🏔  DEM Elevation & 3D Shaded Relief...")
+            act_elev_dlg = menu.addAction(get_icon("elevation"), "DEM Elevation & 3D Shaded Relief...")
             act_elev_dlg.triggered.connect(lambda: cls.open_dem_dialog(panel, layer))
 
-            preset_menu = menu.addMenu("🎨  Apply Elevation Color Ramp")
+            preset_menu = menu.addMenu("Apply Elevation Color Ramp")
             for key, info in ELEVATION_PRESETS.items():
                 act_p = preset_menu.addAction(info["name"])
                 act_p.triggered.connect(lambda checked=False, k=key: cls.apply_elevation_preset(panel, layer, k))
 
-            act_hs = menu.addAction("🌓  Apply Grayscale 3D Hillshade")
+            act_hs = menu.addAction(get_icon("hillshade"), "Apply Grayscale 3D Hillshade")
             act_hs.triggered.connect(lambda: cls.apply_hillshade_quick(panel, layer))
 
-            act_gray = menu.addAction("⚫  Apply Grayscale Stretch (Min/Max)")
+            act_gray = menu.addAction("Apply Grayscale Stretch (Min/Max)")
             act_gray.triggered.connect(lambda: cls.apply_grayscale_quick(panel, layer))
 
             menu.addSeparator()
-            act_vol = menu.addAction("📦  Calculate Volumetrics (Cut / Fill)...")
+            act_vol = menu.addAction(get_icon("profile"), "Calculate Volumetrics (Cut / Fill)...")
             act_vol.triggered.connect(lambda: cls.open_volumetrics(panel, layer))
 
-            act_cutfill = menu.addAction("🚜  Compare Surface Difference (Cut & Fill)...")
+            act_cutfill = menu.addAction(get_icon("cut_fill"), "Compare Surface Difference (Cut & Fill)...")
             act_cutfill.triggered.connect(lambda: cls.open_cut_fill(panel, layer))
 
         if not is_vector and not is_point_cloud:
-            resamp_menu = menu.addMenu("👁  Pixel Display Mode")
+            resamp_menu = menu.addMenu("Pixel Display Mode")
             act_smooth = resamp_menu.addAction("Smooth (Bicubic / Bilinear)")
             act_sharp = resamp_menu.addAction("Sharp Pixels (Nearest Neighbor)")
             act_smooth.triggered.connect(lambda: cls.set_pixel_mode(panel, layer, "smooth"))
             act_sharp.triggered.connect(lambda: cls.set_pixel_mode(panel, layer, "sharp"))
 
-        if is_vector:
-            act_table = menu.addAction("📋  Open Attribute Table")
-            act_table.triggered.connect(lambda: cls.open_attr_table(panel, layer))
-            act_color = menu.addAction("🎨  Change Symbology Color...")
-            act_color.triggered.connect(lambda: cls.change_color(panel, layer))
+        # Layer Opacity Submenu
+        opacity_menu = menu.addMenu("Opacity")
+        for op_val, op_lbl in [(1.0, "100% (Opaque)"), (0.75, "75%"), (0.5, "50% (Semi-transparent)"), (0.25, "25%")]:
+            act_op = opacity_menu.addAction(op_lbl)
+            act_op.triggered.connect(lambda checked=False, v=op_val: cls.set_layer_opacity(panel, layer, v))
 
         menu.addSeparator()
-        act_3d = menu.addAction("🧊  Open in 3D Point Cloud / Terrain Viewer")
+        act_3d = menu.addAction(get_icon("view_3d"), "Open in 3D Point Cloud / Terrain Viewer")
         act_3d.triggered.connect(lambda: cls.open_3d_viewer(panel, layer))
 
         menu.addSeparator()
-        act_rename = menu.addAction("✏️  Rename Layer")
+        act_rename = menu.addAction("Rename Layer...")
         act_rename.triggered.connect(lambda: cls.rename_layer(panel, item, layer))
 
-        act_export = menu.addAction("💾  Export Layer...")
+        act_dup = menu.addAction("Duplicate Layer")
+        act_dup.triggered.connect(lambda: cls.duplicate_layer(panel, layer))
+
+        act_export = menu.addAction(get_icon("save_project"), "Export Layer...")
         act_export.triggered.connect(lambda: cls.export_layer(panel, layer))
 
-        act_props = menu.addAction("ℹ️  Properties / Metadata...")
+        act_props = menu.addAction(get_icon("identify"), "Properties...")
         act_props.triggered.connect(lambda: cls.show_props(panel, layer))
 
         menu.addSeparator()
-        act_remove = menu.addAction("🗑  Remove Layer")
+        act_remove = menu.addAction(get_icon("delete"), "Remove Layer")
         act_remove.triggered.connect(lambda: cls.remove_layer(panel, layer))
 
         menu.exec_(panel.tree.viewport().mapToGlobal(pos))
@@ -197,22 +206,9 @@ class LayerContextMenuHandler:
     def show_props(panel, layer):
         if not layer or not layer.isValid():
             return
-        info = f"<b>Layer Name:</b> {layer.name()}<br>"
-        info += f"<b>Source:</b> {layer.source()}<br>"
-        info += f"<b>CRS:</b> {layer.crs().authid()} ({layer.crs().description()})<br>"
-        info += f"<b>Type:</b> {'Vector' if isinstance(layer, QgsVectorLayer) else 'Raster / Point Cloud'}<br>"
-        ext = layer.extent()
-        info += f"<b>Extent:</b> [{ext.xMinimum():.3f}, {ext.yMinimum():.3f}] - [{ext.xMaximum():.3f}, {ext.yMaximum():.3f}]<br>"
-
-        from qgis.core import QgsRasterLayer
-        if isinstance(layer, QgsRasterLayer):
-            info += f"<b>Dimensions:</b> {layer.width()} x {layer.height()} pixels<br>"
-            info += f"<b>Bands:</b> {layer.bandCount()}<br>"
-            stats = ElevationStyler.get_valid_elevation_stats(layer)
-            if stats:
-                info += f"<b>Elevation Min / Max:</b> {stats['min']:.2f} m / {stats['max']:.2f} m<br>"
-
-        QMessageBox.information(panel, f"Properties - {layer.name()}", info)
+        from ui.layer_properties_dialog import LayerPropertiesDialog
+        dlg = LayerPropertiesDialog(layer, map_canvas=getattr(panel, "map_canvas", None), parent=panel.window() if panel else None)
+        dlg.exec_()
 
     @staticmethod
     def open_3d_viewer(panel, layer):
@@ -283,3 +279,25 @@ class LayerContextMenuHandler:
                 import shutil
                 shutil.copy(layer.source(), path)
                 QMessageBox.information(panel, "Exported", f"Successfully exported to:\n{path}")
+
+    @staticmethod
+    def duplicate_layer(panel, layer):
+        if not layer or not layer.isValid():
+            return
+        from qgis.core import QgsProject
+        clone = layer.clone()
+        clone.setName(f"{layer.name()} (Copy)")
+        QgsProject.instance().addMapLayer(clone)
+        panel.refresh()
+
+    @staticmethod
+    def set_layer_opacity(panel, layer, opacity):
+        if not layer or not layer.isValid():
+            return
+        try:
+            layer.setOpacity(opacity)
+            layer.triggerRepaint()
+            if hasattr(panel, "map_canvas") and panel.map_canvas:
+                panel.map_canvas.refresh_canvas()
+        except Exception:
+            pass

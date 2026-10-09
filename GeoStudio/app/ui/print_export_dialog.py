@@ -106,6 +106,8 @@ class PrintExportDialog(QDialog):
         self.progress.hide()
         layout.addWidget(self.progress)
 
+        self.setWindowModality(Qt.ApplicationModal)
+
         # Buttons
         btn_box = QHBoxLayout()
         btn_box.setSpacing(10)
@@ -113,14 +115,48 @@ class PrintExportDialog(QDialog):
         btn_cancel = QPushButton("Cancel")
         btn_cancel.clicked.connect(self.reject)
         btn_box.addWidget(btn_cancel)
+
+        btn_designer = QPushButton("Open in Layout Designer...")
+        btn_designer.setStyleSheet("background: #f8fafc; color: #0f172a; border: 1px solid #cbd5e1; font-weight: 600; padding: 7px 14px; border-radius: 4px;")
+        btn_designer.clicked.connect(self._open_in_designer)
+        btn_box.addWidget(btn_designer)
+
         btn_box.addStretch()
 
-        btn_export = QPushButton("🚀 Export & Save Map")
+        btn_export = QPushButton("Export & Save Map")
         btn_export.setStyleSheet("background: #0284c7; color: white; font-weight: bold; padding: 7px 16px; border-radius: 4px;")
         btn_export.clicked.connect(self._do_export)
         btn_box.addWidget(btn_export)
 
         layout.addLayout(btn_box)
+
+    def _open_in_designer(self):
+        from ui.layout.layout_templates import create_layout_from_template
+        from ui.layout.layout_designer_window import GeoStudioLayoutDesignerWindow
+
+        proj = QgsProject.instance()
+        mgr = proj.layoutManager()
+        name = "Map Layout"
+        base_name = name
+        counter = 1
+        while mgr.layoutByName(name):
+            name = f"{base_name} ({counter})"
+            counter += 1
+
+        preset = self.combo_preset.currentText()
+        template = "A4 Landscape"
+        if "Portrait" in preset:
+            template = "A4 Portrait"
+        elif "A3" in preset:
+            template = "A3 Landscape"
+
+        layout = create_layout_from_template(proj, name, template, map_canvas=self.mw.map_canvas)
+        mgr.addLayout(layout)
+
+        self.accept()
+        designer = GeoStudioLayoutDesignerWindow(layout, main_window=self.mw, parent=self.mw)
+        designer.show()
+
 
     def _get_dpi(self):
         idx = self.combo_dpi.currentIndex()

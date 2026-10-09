@@ -211,7 +211,7 @@ class ProcessingDock(QDockWidget):
     """
 
     def __init__(self, map_canvas, parent=None):
-        super().__init__("⚙ Processing Toolbox", parent)
+        super().__init__("Processing Toolbox", parent)
         self.setObjectName("processing_dock")
         self.setMinimumWidth(320)
         self.setMaximumWidth(480)

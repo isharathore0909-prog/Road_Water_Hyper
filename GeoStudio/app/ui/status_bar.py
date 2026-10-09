@@ -70,31 +70,34 @@ class GeoStatusBar(QStatusBar):
     def _build_widgets(self):
         self.setSizeGripEnabled(False)
 
-        # Coordinate display
-        self.coord_label = QLabel("🌐 X: ─────  Y: ─────")
-        self.coord_label.setMinimumWidth(220)
+        # CRS
+        self.crs_label = QLabel("EPSG:4326")
+        self.crs_label.setMinimumWidth(105)
 
-        # Elevation display (Real-time cursor elevation)
-        self.elev_label = QLabel("🏔 Elev: ─────")
-        self.elev_label.setMinimumWidth(110)
-        self.elev_label.setStyleSheet("background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 2px 8px; color: #94a3b8;")
+        # Coordinate display
+        self.coord_label = QLabel("X: ─────  Y: ─────")
+        self.coord_label.setMinimumWidth(210)
 
         # Scale
-        self.scale_label = QLabel("📐 Scale: 1:──────")
+        self.scale_label = QLabel("Scale 1:──────")
         self.scale_label.setMinimumWidth(125)
 
-        # CRS
-        self.crs_label = QLabel("🌐 CRS: ──────")
-        self.crs_label.setMinimumWidth(115)
+        # Rotation
+        self.rotation_label = QLabel("Rotation 0°")
+        self.rotation_label.setMinimumWidth(80)
+
+        # Selection count
+        self.selection_label = QLabel("Selected: 0")
+        self.selection_label.setMinimumWidth(90)
 
         # Active layer
-        self.layer_label = QLabel("🗂 Layer: None")
-        self.layer_label.setMinimumWidth(140)
+        self.layer_label = QLabel("Layer: None")
+        self.layer_label.setMinimumWidth(130)
 
-        # File loading / metrics info widget
-        self.file_load_label = QLabel("📁 Ready")
-        self.file_load_label.setMinimumWidth(180)
-        self.file_load_label.setStyleSheet("background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 2px 8px; color: #64748b; font-weight: 500;")
+        # Elevation display (Cursor elevation)
+        self.elev_label = QLabel("Elev: ─────")
+        self.elev_label.setMinimumWidth(95)
+        self.elev_label.setStyleSheet("background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 2px 8px; color: #94a3b8;")
 
         # Progress
         self.progress = QProgressBar()
@@ -106,15 +109,16 @@ class GeoStatusBar(QStatusBar):
         self.progress.setVisible(False)
 
         # Status message badge
-        self.msg_label = QLabel("● Ready")
+        self.msg_label = QLabel("Rendering: Ready")
         self.msg_label.setStyleSheet("background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; padding: 2px 10px; color: #16a34a; font-weight: 600;")
 
-        self.addWidget(self.coord_label)
-        self.addWidget(self.elev_label)
-        self.addWidget(self.scale_label)
         self.addWidget(self.crs_label)
+        self.addWidget(self.coord_label)
+        self.addWidget(self.scale_label)
+        self.addWidget(self.rotation_label)
+        self.addWidget(self.selection_label)
         self.addWidget(self.layer_label)
-        self.addWidget(self.file_load_label)
+        self.addWidget(self.elev_label)
         self.addWidget(self.progress)
         self.addPermanentWidget(self.msg_label)
 
@@ -147,19 +151,37 @@ class GeoStatusBar(QStatusBar):
     def _update_scale(self, scale=None):
         if scale is None:
             scale = self.map_canvas.get_scale()
-        self.scale_label.setText(f"Scale: 1:{int(scale):,}")
+        self.scale_label.setText(f"Scale 1:{int(scale):,}")
 
     def _update_crs(self):
         crs = self.map_canvas.get_crs()
-        self.crs_label.setText(f"CRS: {crs}")
+        self.crs_label.setText(f"{crs}")
 
     def set_layer(self, name: str):
         self.layer_label.setText(f"Layer: {name}")
 
+    def set_selection_count(self, count: int):
+        self.selection_label.setText(f"Selected: {count:,}")
+
+    def set_selected(self, count: int):
+        self.set_selection_count(count)
+
+    def set_coords(self, x: float, y: float):
+        self._update_coords(x, y)
+
+    def set_scale(self, scale: float):
+        self._update_scale(scale)
+
+    def set_crs(self, crs: str):
+        self.crs_label.setText(str(crs))
+
+    def set_rotation(self, deg: float):
+        self.rotation_label.setText(f"Rotation {int(deg)}°")
+
     def set_message(self, msg: str, timeout_ms: int = 4000):
-        self.msg_label.setText(msg)
+        self.msg_label.setText(f"Status: {msg}")
         if timeout_ms > 0:
-            QTimer.singleShot(timeout_ms, lambda: self.msg_label.setText("● Ready"))
+            QTimer.singleShot(timeout_ms, lambda: self.msg_label.setText("Rendering: Ready"))
 
     def showMessage(self, msg: str, timeout: int = 0):
         self.set_message(msg, timeout)

@@ -157,3 +157,19 @@ class AnalysisControllerMixin:
 
     def run_lidar_auto_classification(self, layer=None):
         LidarControllerHandler.run_auto_classification(self, layer=layer)
+
+    def toggle_remote_sensing_dock(self):
+        if hasattr(self, "remote_sensing_dock"):
+            self.remote_sensing_dock.setVisible(not self.remote_sensing_dock.isVisible())
+            if self.remote_sensing_dock.isVisible():
+                self.remote_sensing_dock.raise_()
+                self.remote_sensing_dock.refresh_layers()
+
+    def open_band_manager_dialog(self):
+        if hasattr(self, "remote_sensing_dock"):
+            self.remote_sensing_dock.show()
+            self.remote_sensing_dock.raise_()
+            self.remote_sensing_dock.refresh_layers()
+        else:
+            self.open_composite_dialog()
+

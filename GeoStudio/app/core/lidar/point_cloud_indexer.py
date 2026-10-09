@@ -59,8 +59,10 @@ class PointCloudIndexer:
         """Builds an optimized, multi-threaded PDAL/Untwine pipeline tailored to dataset size."""
         import glob
         qgis_candidates = [
+            os.environ.get("QGIS_ROOT", ""),
             os.environ.get("QGIS_PREFIX_PATH", ""),
             os.environ.get("OSGEO4W_ROOT", ""),
+            r"C:\Program Files\QGIS 3.44.15",
             r"C:\Program Files\QGIS 3.40.14",
             r"C:\Program Files\QGIS 3.34.14",
             r"C:\Program Files\QGIS 3.28.15",
@@ -74,7 +76,7 @@ class PointCloudIndexer:
                 qgis_root = qc
                 break
         if not qgis_root:
-            qgis_root = r"C:\Program Files\QGIS 3.40.14"
+            qgis_root = os.environ.get("QGIS_ROOT") or r"C:\Program Files\QGIS 3.44.15"
 
         bin_dir = os.path.join(qgis_root, "bin")
         qgis_bin = os.path.join(qgis_root, "apps", "qgis-ltr", "bin")

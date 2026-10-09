@@ -8,9 +8,9 @@ import sys
 import os
 
 # ── Bootstrap QGIS environment ──────────────────────────────────────────────
-QGIS_ROOT = r"C:\Program Files\QGIS 3.40.14"
-QGIS_APP  = os.path.join(QGIS_ROOT, "apps", "qgis-ltr")
-QGIS_PY   = os.path.join(QGIS_ROOT, "apps", "Python312")
+QGIS_ROOT = os.environ.get("QGIS_ROOT") or r"C:\Program Files\QGIS 3.44.15"
+QGIS_APP  = os.environ.get("QGIS_PREFIX_PATH") or os.path.join(QGIS_ROOT, "apps", "qgis-ltr")
+QGIS_PY   = os.environ.get("PYTHONHOME") or os.path.join(QGIS_ROOT, "apps", "Python312")
 
 # Add DLL directories for Windows Python 3.8+
 if hasattr(os, 'add_dll_directory'):
@@ -35,14 +35,18 @@ for p in [
     os.path.join(QGIS_PY, "Lib"),
     os.path.dirname(os.path.abspath(__file__)),
 ]:
-    if p not in sys.path:
+    if os.path.exists(p) and p not in sys.path:
         sys.path.insert(0, p)
 
 # Set QGIS prefix path & environment variables
-os.environ["QGIS_PREFIX_PATH"]  = QGIS_APP
-os.environ["GDAL_DATA"]         = os.path.join(QGIS_ROOT, "share", "gdal")
-os.environ["PROJ_LIB"]          = os.path.join(QGIS_ROOT, "share", "proj")
-os.environ["QT_PLUGIN_PATH"]    = os.path.join(QGIS_ROOT, "apps", "Qt5", "plugins")
+os.environ["QGIS_PREFIX_PATH"] = QGIS_APP
+if "GDAL_DATA" not in os.environ:
+    gdal_cand = os.path.join(QGIS_ROOT, "apps", "gdal", "share", "gdal")
+    os.environ["GDAL_DATA"] = gdal_cand if os.path.exists(gdal_cand) else os.path.join(QGIS_ROOT, "share", "gdal")
+if "PROJ_LIB" not in os.environ:
+    os.environ["PROJ_LIB"] = os.path.join(QGIS_ROOT, "share", "proj")
+if "QT_PLUGIN_PATH" not in os.environ:
+    os.environ["QT_PLUGIN_PATH"] = os.path.join(QGIS_ROOT, "apps", "Qt5", "plugins")
 
 # ── Qt & QGIS Application (Single Unified Instance) ───────────────────────────
 from PyQt5.QtWidgets import QSplashScreen
@@ -136,6 +140,10 @@ window.show()
 # Close splash after window shows
 QTimer.singleShot(1400, splash.close)
 QTimer.singleShot(1400, window.raise_)
+
+if "--test" in sys.argv:
+    print("[GeoStudio] Test mode: MainWindow initialized and displayed successfully.")
+    QTimer.singleShot(2000, app.quit)
 
 # ── Run Event Loop ────────────────────────────────────────────────────────────
 exit_code = app.exec_()

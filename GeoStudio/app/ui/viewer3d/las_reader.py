@@ -98,7 +98,7 @@ def load_las_points_data(file_path: str, max_points: int = 8000000):
     if pts_data is None and file_path.lower().endswith(('.laz', '.copc.laz')):
         try:
             import subprocess, tempfile, shutil
-            qgis_root = r"C:\Program Files\QGIS 3.40.14"
+            qgis_root = os.environ.get("QGIS_ROOT") or r"C:\Program Files\QGIS 3.44.15"
             pdal_candidates = [
                 os.path.join(qgis_root, "bin", "pdal.exe"),
                 os.path.join(qgis_root, "apps", "qgis-ltr", "bin", "pdal.exe"),

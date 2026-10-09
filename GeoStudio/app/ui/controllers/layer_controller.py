@@ -53,10 +53,24 @@ class LayerControllerMixin:
         self.layer_panel.show_layer_properties()
 
     def toggle_layer_dock(self):
-        self.layer_dock.setVisible(not self.layer_dock.isVisible())
+        if hasattr(self, "layer_dock"):
+            self.layer_dock.setVisible(not self.layer_dock.isVisible())
+
+    def toggle_browser_dock(self):
+        if hasattr(self, "browser_dock"):
+            self.browser_dock.setVisible(not self.browser_dock.isVisible())
+
+    def toggle_identify_dock(self):
+        if hasattr(self, "identify_dock"):
+            self.identify_dock.setVisible(not self.identify_dock.isVisible())
+
+    def toggle_attr_table_dock(self):
+        if hasattr(self, "attr_table_dock"):
+            self.attr_table_dock.setVisible(not self.attr_table_dock.isVisible())
 
     def toggle_processing_dock(self):
-        self.processing_dock.setVisible(not self.processing_dock.isVisible())
+        if hasattr(self, "processing_dock"):
+            self.processing_dock.setVisible(not self.processing_dock.isVisible())
 
     def show_recently_used(self):
         self.processing_dock.show()
