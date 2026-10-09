@@ -43,6 +43,19 @@ os.environ["QGIS_PREFIX_PATH"]  = QGIS_APP
 os.environ["GDAL_DATA"]         = os.path.join(QGIS_ROOT, "share", "gdal")
 os.environ["PROJ_LIB"]          = os.path.join(QGIS_ROOT, "share", "proj")
 os.environ["QT_PLUGIN_PATH"]    = os.path.join(QGIS_ROOT, "apps", "Qt5", "plugins")
+os.environ["QT_LOGGING_RULES"]   = "*.debug=false;qt.qpa.*=false;qt.core.mimetype.*=false;" + os.environ.get("QT_LOGGING_RULES", "")
+
+# ── Suppress harmless internal Qt MIME database & font warnings ───────────────
+try:
+    from PyQt5.QtCore import qInstallMessageHandler, QtMsgType
+    def _qt_message_handler(msg_type, context, message):
+        if any(s in message for s in ("QMimeDatabase", "internal MIME data", "Premature end of document", "qpa")):
+            return
+        if msg_type in (QtMsgType.QtFatalMsg, QtMsgType.QtCriticalMsg):
+            sys.stderr.write(f"[Qt] {message}\n")
+    qInstallMessageHandler(_qt_message_handler)
+except Exception:
+    pass
 
 # ── Qt & QGIS Application (Single Unified Instance) ───────────────────────────
 from PyQt5.QtWidgets import QSplashScreen

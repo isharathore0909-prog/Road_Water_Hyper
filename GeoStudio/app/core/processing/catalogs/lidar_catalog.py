@@ -134,6 +134,76 @@ LIDAR_CATALOG: Dict[str, Any] = {
                             supports_gpu=True,
                         ),
                     ]
+                },
+                {
+                    "name": "Utility Corridor & Infrastructure LiDAR",
+                    "items": [
+                        AlgorithmDefinition(
+                            "Classify Powerlines & Transmission Towers",
+                            "lidar:classify_powerlines",
+                            "LiDAR & Point Cloud",
+                            "Utility Corridor & Infrastructure LiDAR",
+                            "Classifies powerline conductor wires (ASPRS 14) and transmission towers (ASPRS 15) using 3D linearity tensor and structural clustering.",
+                            "lidar_powerline",
+                            supports_gpu=True,
+                        ),
+                        AlgorithmDefinition(
+                            "Vegetation Clearance & Danger Tree Buffer",
+                            "lidar:vegetation_clearance",
+                            "LiDAR & Point Cloud",
+                            "Utility Corridor & Infrastructure LiDAR",
+                            "Calculates 3D radial clearance between powerlines and canopy, identifying fall-in danger trees and generating corridor safety buffers.",
+                            "lidar_clearance",
+                            supports_gpu=True,
+                        ),
+                    ]
+                },
+                {
+                    "name": "Building & Urban 3D",
+                    "items": [
+                        AlgorithmDefinition(
+                            "Extract Building Planar Roofs",
+                            "lidar:extract_roofs",
+                            "LiDAR & Point Cloud",
+                            "Building & Urban 3D",
+                            "Extracts planar roof facets from building LiDAR points using Multi-Plane RANSAC, calculating pitch (°), azimuth (°), 3D area, and solar PV suitability.",
+                            "lidar_roofs",
+                            supports_gpu=True,
+                        ),
+                    ]
+                },
+                {
+                    "name": "Road & Transportation Corridor Engineering",
+                    "items": [
+                        AlgorithmDefinition(
+                            "Classify Road Surface & Pavement (ASPRS 11)",
+                            "lidar:classify_roads",
+                            "LiDAR & Point Cloud",
+                            "Road & Transportation Corridor Engineering",
+                            "Segments asphalt, pavement, and road surface points (ASPRS Class 11) from LiDAR point clouds using 3D planarity tensor, roughness, and ground proximity.",
+                            "lidar_road_surface",
+                            supports_gpu=True,
+                        ),
+                        AlgorithmDefinition(
+                            "Extract Road Centerlines & Curbs",
+                            "lidar:road_centerline",
+                            "LiDAR & Point Cloud",
+                            "Road & Transportation Corridor Engineering",
+                            "Traces 3D continuous road centerlines, left/right curb boundary lines, corridor footprint polygons, and equidistant station chainage markers (GPKG).",
+                            "lidar_road_corridor",
+                            supports_gpu=True,
+                        ),
+                        AlgorithmDefinition(
+                            "Road Grade, Roughness & Vehicle Clearance",
+                            "lidar:road_condition",
+                            "LiDAR & Point Cloud",
+                            "Road & Transportation Corridor Engineering",
+                            "Analyzes longitudinal slope gradient (%), pavement surface roughness (IRI proxy), and scans 3D overhead vehicle clearance envelope (e.g. 4.8m) for encroaching tree branches, cables, and overpass hazards.",
+                            "lidar_road_condition",
+                            supports_gpu=True,
+                        ),
+                    ]
                 }
             ]
         }
+

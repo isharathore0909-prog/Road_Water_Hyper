@@ -13,7 +13,7 @@ REM -- Additional Python plugin path for processing module --
 SET PYTHONPATH=%QGIS_APP%\python;%QGIS_APP%\python\plugins;%APPDATA%\Python\Python312\site-packages;%QGIS_PYTHON%\Lib\site-packages;%QGIS_PYTHON%\Lib;%~dp0app;%PYTHONPATH%
 
 REM -- Suppress Qt warnings --
-SET QT_LOGGING_RULES=*.debug=false;qt.qpa.*=false
+SET QT_LOGGING_RULES=*.debug=false;qt.qpa.*=false;qt.core.mimetype.*=false
 
 REM -- Launch GeoStudio --
 echo Starting GeoStudio...

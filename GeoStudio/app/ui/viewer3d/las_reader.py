@@ -124,10 +124,16 @@ def load_las_points_data(file_path: str, max_points: int = 8000000):
 
     # 3. Universal binary parser for uncompressed LAS 1.0 - 1.4 formats
     if pts_data is None:
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in ['.gpkg', '.shp', '.geojson', '.json', '.kml']:
+            raise ValueError(f"'{os.path.basename(file_path)}' is a GIS vector layer. Use PointCloudReader.load_vector_3d_points to render.")
+        if ext in ['.tif', '.tiff', '.dem', '.asc', '.hgt']:
+            raise ValueError(f"'{os.path.basename(file_path)}' is a raster/DEM layer. Use PointCloudReader.load_dem_points to render.")
+
         with open(file_path, 'rb') as f:
             header = f.read(375)
             if header[:4] != b'LASF':
-                raise ValueError("Not a valid standard LAS/LAZ point cloud dataset.")
+                raise ValueError(f"'{os.path.basename(file_path)}' is not a valid standard LAS/LAZ point cloud dataset.")
 
             v_maj, v_min = header[24], header[25]
             hdr_sz, = struct.unpack('<H', header[94:96])

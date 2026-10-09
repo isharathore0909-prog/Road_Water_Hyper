@@ -18,7 +18,20 @@ from app.ui.algorithm_runners import (
     run_raster_viewshed,
     run_terrain_cutfill,
     run_terrain_flood,
-    run_vector_buffer
+    run_vector_buffer,
+    run_forestry_detect,
+    run_forestry_heights,
+    run_forestry_crown,
+    run_forestry_dbh,
+    run_forestry_validate,
+    run_forestry_report,
+    run_forestry_carbon,
+    run_lidar_powerlines,
+    run_vegetation_clearance,
+    run_building_roofs,
+    run_lidar_road_surface,
+    run_lidar_road_corridor,
+    run_lidar_road_condition
 )
 
 
@@ -71,7 +84,49 @@ class AlgorithmExecutor:
             elif dtype == "vector_buffer" and hasattr(dialog, "vector_combo"):
                 run_vector_buffer(dialog)
 
-            # 8. Fallback
+            # 8. Forestry & Tree Metrics Suite
+            elif dtype == "forestry_detect":
+                run_forestry_detect(dialog)
+
+            elif dtype == "forestry_heights":
+                run_forestry_heights(dialog)
+
+            elif dtype == "forestry_crown":
+                run_forestry_crown(dialog)
+
+            elif dtype == "forestry_dbh":
+                run_forestry_dbh(dialog)
+
+            elif dtype == "forestry_validate":
+                run_forestry_validate(dialog)
+
+            elif dtype == "forestry_report":
+                run_forestry_report(dialog)
+
+            elif dtype == "forestry_carbon":
+                run_forestry_carbon(dialog)
+
+            # 9. Utility Corridor & LiDAR Suite
+            elif dtype == "lidar_powerline":
+                run_lidar_powerlines(dialog)
+
+            elif dtype == "lidar_clearance":
+                run_vegetation_clearance(dialog)
+
+            elif dtype == "lidar_roofs":
+                run_building_roofs(dialog)
+
+            # 10. Road & Transportation Corridor LiDAR Suite
+            elif dtype == "lidar_road_surface":
+                run_lidar_road_surface(dialog)
+
+            elif dtype == "lidar_road_corridor":
+                run_lidar_road_corridor(dialog)
+
+            elif dtype == "lidar_road_condition":
+                run_lidar_road_condition(dialog)
+
+            # 11. Fallback
             else:
                 dialog.log("Executing via QGIS processing backend...")
                 time.sleep(0.3)

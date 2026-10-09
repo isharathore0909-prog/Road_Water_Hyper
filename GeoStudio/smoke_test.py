@@ -34,7 +34,15 @@ for p in [
         sys.path.insert(0, p)
 
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import qInstallMessageHandler, QtMsgType
 from qgis.core import QgsApplication
+
+def _qt_message_handler(msg_type, context, message):
+    if any(s in message for s in ("QMimeDatabase", "internal MIME data", "Premature end of document", "qpa")):
+        return
+    if msg_type in (QtMsgType.QtFatalMsg, QtMsgType.QtCriticalMsg):
+        sys.stderr.write(f"[Qt] {message}\n")
+qInstallMessageHandler(_qt_message_handler)
 
 print("[1/5] Creating QgsApplication...")
 qgs = QgsApplication([], False)

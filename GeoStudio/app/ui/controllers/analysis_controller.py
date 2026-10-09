@@ -92,6 +92,10 @@ class AnalysisControllerMixin:
     def raster_reproject(self):         self.processing_dock.open_algorithm("native:reproject")
     def raster_clip(self):              self.open_crop_raster_dialog()
 
+    def open_road_classification_dialog(self): self.processing_dock.open_algorithm("lidar:classify_roads")
+    def open_road_centerline_dialog(self):     self.processing_dock.open_algorithm("lidar:road_centerline")
+    def open_road_condition_dialog(self):      self.processing_dock.open_algorithm("lidar:road_condition")
+
     def open_elevation_profile(self):
         from ui.elevation_profile_dialog import ElevationProfileDialog
         if not hasattr(self, "_elev_profile_dialog") or self._elev_profile_dialog is None:
@@ -109,15 +113,31 @@ class AnalysisControllerMixin:
         from ui.viewer_3d import GeoStudio3DViewerWindow
         from qgis.core import QgsProject, QgsMapLayer
 
-        layer = target_layer or self.layer_panel.get_active_layer()
+        def _is_pc_layer(lyr):
+            if not lyr or not lyr.isValid():
+                return False
+            if hasattr(QgsMapLayer, "PointCloudLayer") and lyr.type() == QgsMapLayer.PointCloudLayer:
+                return True
+            name = lyr.name().lower()
+            if "[lidar]" in name or "cloud" in name:
+                return True
+            src = (lyr.source() if hasattr(lyr, "source") else "") or ""
+            return src.lower().endswith((".las", ".laz", ".copc.laz", ".e57"))
+
+        # 1. Determine layer
+        layer = target_layer
         if not layer:
-            for l in QgsProject.instance().mapLayers().values():
-                if hasattr(QgsMapLayer, "PointCloudLayer") and l.type() == QgsMapLayer.PointCloudLayer:
-                    layer = l
-                    break
-                elif "[LiDAR]" in l.name() or "cloud" in l.name().lower():
-                    layer = l
-                    break
+            active = self.layer_panel.get_active_layer()
+            if active and _is_pc_layer(active):
+                layer = active
+            else:
+                # Prioritize any Point Cloud / LiDAR layer loaded in the project
+                for l in QgsProject.instance().mapLayers().values():
+                    if _is_pc_layer(l):
+                        layer = l
+                        break
+                if not layer:
+                    layer = active
 
         if layer:
             src = layer.customProperty("original_las_path") or (layer.source() if hasattr(layer, "source") else None)
@@ -126,17 +146,30 @@ class AnalysisControllerMixin:
                     if os.path.exists(cand):
                         src = cand
                         break
+
+            # If layer is a vector and user didn't right-click it, check if project has LiDAR layer
+            if not target_layer and src and src.lower().endswith((".gpkg", ".shp")):
+                for l in QgsProject.instance().mapLayers().values():
+                    if _is_pc_layer(l):
+                        pc_src = l.source()
+                        if pc_src and os.path.exists(pc_src):
+                            layer = l
+                            src = pc_src
+                            break
+
             if src and os.path.exists(src):
                 dlg = GeoStudio3DViewerWindow(self, layer=layer, file_path=src)
                 dlg.exec_()
                 return
+
         path, _ = QFileDialog.getOpenFileName(
             self, "Open 3D Point Cloud", "",
-            "Point Cloud Files (*.las *.laz *.copc.laz *.e57 *.ply *.xyz *.pts *.csv *.pcd);;All Files (*)"
+            "Point Cloud & 3D Vector Files (*.las *.laz *.copc.laz *.e57 *.ply *.xyz *.pts *.csv *.pcd *.gpkg *.shp);;All Files (*)"
         )
         if path:
             dlg = GeoStudio3DViewerWindow(self, file_path=path)
             dlg.exec_()
+
 
     def set_lidar_color_mode(self, m: str):
         LidarControllerHandler.set_lidar_color_mode(self, m)
