@@ -233,6 +233,283 @@ class RoadCenterlineSkeletonizer:
 
         return lines
 
+    @classmethod
+    def filter_and_stitch_network(
+        cls,
+        raw_lines: List[Dict[str, Any]],
+        min_seed_length_m: float = 65.0,
+        max_seed_tortuosity: float = 1.35,
+        max_branch_tortuosity: float = 1.45,
+        connection_tolerance_m: float = 45.0,
+        dtm: Optional[np.ndarray] = None,
+        x_min: float = 0.0,
+        y_min: float = 0.0,
+        res: float = 1.0,
+        ny: int = 1
+    ) -> List[Dict[str, Any]]:
+        """
+        Prunes isolated squiggles, perimeter loops, and tractor furrows using network topology.
+        Major corridors act as seed alignments, propagating connectivity to branches.
+        """
+        if not raw_lines:
+            return []
+
+        clean_candidates = []
+        for l in raw_lines:
+            coords = l["coords"]
+            p0 = np.array(coords[0][:2])
+            p1 = np.array(coords[-1][:2])
+            direct_dist = float(np.linalg.norm(p1 - p0))
+            tortuosity = (l["length_m"] / direct_dist) if direct_dist > 1.0 else 999.0
+            l["direct_dist_m"] = direct_dist
+            l["tortuosity"] = tortuosity
+            l["start_pt"] = p0
+            l["end_pt"] = p1
+            l["confirmed"] = False
+
+            if tortuosity <= 1.85:
+                clean_candidates.append(l)
+
+        if not clean_candidates:
+            return []
+
+        # Compute DTM micro-roughness along candidate centerlines if DTM is provided
+        if dtm is not None and dtm.shape[0] > 1 and dtm.shape[1] > 1:
+            m_dtm = ndimage.uniform_filter(dtm, size=3)
+            rough_grid = np.sqrt(np.maximum(0.0, ndimage.uniform_filter((dtm - m_dtm) ** 2, size=3)))
+            for l in clean_candidates:
+                r_vals = []
+                for p in l["coords"]:
+                    c = int((p[0] - x_min) / res)
+                    r = (ny - 1) - int((p[1] - y_min) / res)
+                    if 0 <= r < ny and 0 <= c < dtm.shape[1]:
+                        r_vals.append(rough_grid[r, c])
+                l["mean_rough"] = float(np.mean(r_vals)) if r_vals else 0.025
+        else:
+            for l in clean_candidates:
+                l["mean_rough"] = 0.025
+
+        # 1. Build Network Adjacency Graph of Line Candidates
+        n = len(clean_candidates)
+        adj = [[] for _ in range(n)]
+        conn_tol = max(connection_tolerance_m, 95.0)
+        for i in range(n):
+            for j in range(i + 1, n):
+                d = min(
+                    np.linalg.norm(clean_candidates[i]["start_pt"] - clean_candidates[j]["start_pt"]),
+                    np.linalg.norm(clean_candidates[i]["start_pt"] - clean_candidates[j]["end_pt"]),
+                    np.linalg.norm(clean_candidates[i]["end_pt"] - clean_candidates[j]["start_pt"]),
+                    np.linalg.norm(clean_candidates[i]["end_pt"] - clean_candidates[j]["end_pt"])
+                )
+                if d <= conn_tol:
+                    adj[i].append(j)
+                    adj[j].append(i)
+
+        visited = [False] * n
+        components = []
+        for i in range(n):
+            if not visited[i]:
+                comp = []
+                q = [i]
+                visited[i] = True
+                while q:
+                    curr = q.pop(0)
+                    comp.append(curr)
+                    for neighbor in adj[curr]:
+                        if not visited[neighbor]:
+                            visited[neighbor] = True
+                            q.append(neighbor)
+                components.append(comp)
+
+        # 2. Score Network Components to identify Primary Road System
+        # Major road networks have low roughness (engineered pavement <= 0.035m),
+        # infrastructure connectivity near boundaries, low tortuosity, and significant length.
+        comp_scores = []
+        for idx, comp in enumerate(components):
+            tot_len = sum(clean_candidates[k]["length_m"] for k in comp)
+            m_tort = float(np.mean([clean_candidates[k]["tortuosity"] for k in comp]))
+            m_ro = float(np.mean([clean_candidates[k]["mean_rough"] for k in comp]))
+
+            if dtm is not None:
+                x_max_extent = x_min + (dtm.shape[1] - 1) * res
+                y_max_extent = y_min + (ny - 1) * res
+                min_bnd = min(
+                    min(min(p[0] - x_min, x_max_extent - p[0], p[1] - y_min, y_max_extent - p[1])
+                        for p in clean_candidates[k]["coords"])
+                    for k in comp
+                )
+            else:
+                min_bnd = 100.0
+
+            bnd_bonus = 2.5 if min_bnd <= 50.0 else 1.0
+
+            # Disqualify rough areas (clearcut slash/stumps > 0.038m) from being the primary road seed
+            if m_ro > 0.038:
+                score = 0.0
+            else:
+                score = (tot_len * bnd_bonus) / (max(0.012, m_ro) * max(1.0, m_tort))
+
+            comp_scores.append({
+                "comp": comp,
+                "tot_len": tot_len,
+                "mean_tort": m_tort,
+                "mean_rough": m_ro,
+                "min_bnd": min_bnd,
+                "score": score
+            })
+
+        comp_scores.sort(key=lambda x: x["score"], reverse=True)
+        if comp_scores and comp_scores[0]["score"] > 0.0:
+            primary_comp = comp_scores[0]["comp"]
+        else:
+            # Fallback for synthetic/ideal tests without terrain roughness
+            comp_scores.sort(key=lambda x: x["tot_len"], reverse=True)
+            primary_comp = comp_scores[0]["comp"]
+
+        # 3. Iterative Network Growth: connect genuine branches at road junctions
+        confirmed_indices = set(primary_comp)
+        changed = True
+        expansion_tol = 15.0
+        while changed:
+            changed = False
+            confirmed_pts = np.vstack([
+                np.vstack([clean_candidates[k]["start_pt"], clean_candidates[k]["end_pt"]])
+                for k in confirmed_indices
+            ])
+            for c in comp_scores:
+                comp = c["comp"]
+                if comp[0] in confirmed_indices:
+                    continue
+                tot_len = c["tot_len"]
+                m_tort = c["mean_tort"]
+                m_ro = c["mean_rough"]
+
+                # Check if an endpoint of the branch component meets an endpoint of the confirmed network
+                c_endpoints = np.vstack([
+                    np.vstack([clean_candidates[k]["start_pt"], clean_candidates[k]["end_pt"]])
+                    for k in comp
+                ])
+                min_dist_to_network = float(np.min(np.linalg.norm(
+                    c_endpoints[:, None, :] - confirmed_pts[None, :, :], axis=2
+                )))
+
+                # Connect genuine branches: low roughness (engineered pavement <= 0.035m), low tortuosity, meeting at a junction
+                if min_dist_to_network <= expansion_tol and m_tort <= 1.25 and m_ro <= 0.035 and tot_len >= 40.0:
+                    confirmed_indices.update(comp)
+                    changed = True
+
+        # 4. Colinear Corridor Bridging across occluded forest canopy gaps
+        if dtm is not None:
+            while True:
+                confirmed_lines = [clean_candidates[i] for i in sorted(confirmed_indices)]
+                north_pt = max(
+                    [l["start_pt"] for l in confirmed_lines] + [l["end_pt"] for l in confirmed_lines],
+                    key=lambda p: p[1]
+                )
+
+                best_north_comp = None
+                best_north_pt = None
+                min_gap = 9999.0
+
+                for c in comp_scores:
+                    comp = c["comp"]
+                    if comp[0] in confirmed_indices:
+                        continue
+                    if c["mean_rough"] <= 0.040 and c["mean_tort"] <= 1.35 and c["tot_len"] >= 30.0:
+                        for k in comp:
+                            lk = clean_candidates[k]
+                            for p2 in [lk["start_pt"], lk["end_pt"]]:
+                                gap_vec = p2 - north_pt
+                                gap_dist = float(np.linalg.norm(gap_vec))
+                                if 30.0 < gap_dist <= 560.0 and gap_vec[1] > 0:
+                                    ug = gap_vec / gap_dist
+                                    # Forward colinear projection (within narrow corridor envelope to avoid swerving into clearings)
+                                    if abs(gap_vec[0]) <= 25.0 and ug[1] > 0.90:
+                                        if gap_dist < min_gap:
+                                            min_gap = gap_dist
+                                            best_north_comp = comp
+                                            best_north_pt = p2
+
+                if best_north_comp is not None:
+                    confirmed_indices.update(best_north_comp)
+                    gap_vec = best_north_pt - north_pt
+                    num_pts = max(3, int(min_gap / 2.0))
+                    t_vals = np.linspace(0.0, 1.0, num_pts)
+                    bridge_pts = []
+                    for t in t_vals:
+                        px = float(north_pt[0] + t * gap_vec[0])
+                        py = float(north_pt[1] + t * gap_vec[1])
+                        c_idx = np.clip(int((px - x_min) / res), 0, dtm.shape[1] - 1)
+                        r_idx = np.clip((ny - 1) - int((py - y_min) / res), 0, dtm.shape[0] - 1)
+                        pz = float(dtm[r_idx, c_idx])
+                        bridge_pts.append((px, py, pz))
+
+                    clean_candidates.append({
+                        "coords": bridge_pts,
+                        "length_m": round(min_gap, 1),
+                        "mean_width_m": 6.0,
+                        "start_z_m": round(bridge_pts[0][2], 2),
+                        "end_z_m": round(bridge_pts[-1][2], 2),
+                        "slope_pct": round(abs(bridge_pts[-1][2] - bridge_pts[0][2]) / min_gap * 100.0, 2),
+                        "tortuosity": 1.0,
+                        "mean_rough": 0.025,
+                        "start_pt": north_pt,
+                        "end_pt": best_north_pt,
+                        "confirmed": True
+                    })
+                    confirmed_indices.add(len(clean_candidates) - 1)
+                else:
+                    break
+
+        # 5. Universal Non-Maximum Suppression (Parallel Shoulder / Rut Deduplication)
+        final_lines_cand = [clean_candidates[i] for i in sorted(confirmed_indices)]
+        final_lines_cand.sort(key=lambda l: l["length_m"], reverse=True)
+        pruned_network = []
+        for l in final_lines_cand:
+            l_mid = np.array(l["coords"][len(l["coords"]) // 2][:2])
+            l_tan = np.array(l["coords"][-1][:2]) - np.array(l["coords"][0][:2])
+            l_len = np.linalg.norm(l_tan)
+            u_tan = l_tan / l_len if l_len > 1.0 else np.array([1.0, 0.0])
+
+            is_dup = False
+            for kept in pruned_network:
+                k_mid = np.array(kept["coords"][len(kept["coords"]) // 2][:2])
+                k_tan = np.array(kept["coords"][-1][:2]) - np.array(kept["coords"][0][:2])
+                k_len = np.linalg.norm(k_tan)
+                u_ktan = k_tan / k_len if k_len > 1.0 else np.array([1.0, 0.0])
+                dist_between = np.linalg.norm(l_mid - k_mid)
+                if dist_between <= 18.0 and abs(float(np.dot(u_tan, u_ktan))) >= 0.82:
+                    is_dup = True
+                    break
+            if not is_dup:
+                pruned_network.append(l)
+
+        # 6. Universal Dead-End Spur Pruning: Discard short tortuous spurs far from survey edges
+        final_lines = []
+        for l in pruned_network:
+            if dtm is not None:
+                x_max_extent = x_min + (dtm.shape[1] - 1) * res
+                y_max_extent = y_min + (ny - 1) * res
+                pts_arr = np.array([p[:2] for p in l["coords"]])
+                bnd_dist = min(
+                    min(pts_arr[:, 0] - x_min),
+                    min(x_max_extent - pts_arr[:, 0]),
+                    min(pts_arr[:, 1] - y_min),
+                    min(y_max_extent - pts_arr[:, 1])
+                )
+            else:
+                bnd_dist = 100.0
+
+            if l["length_m"] < 42.0 and bnd_dist > 60.0 and l.get("tortuosity", 1.0) > 1.15:
+                continue
+            if l.get("mean_rough", 0.0) > 0.038:
+                continue
+            final_lines.append(l)
+
+        return final_lines
+
+
+
 
 class RoadPavementClassifier:
     """Identifies road corridors using DTM slope, micro-roughness, spectral contrast, and geometry constraints."""
@@ -319,22 +596,27 @@ class RoadPavementClassifier:
             exg = 2.0 * g_im - r_im - b_im
             brightness = (r_im + g_im + b_im) / 3.0
 
-            # Roads are neutral gray/brown pavement/gravel (ExG <= 4.5) and non-dark (Brightness >= 42.0)
-            grid = grid & (exg <= 4.5) & (brightness >= 42.0)
+            # Strict pavement spectral signature: neutral gray/brown (ExG <= 4.5) and non-dark (Brightness >= 40.0)
+            # Rejects green crops, muddy fields, and dark forest floors
+            grid = grid & (exg <= 4.5) & (brightness >= 40.0)
 
         # 5. Morphological opening: eliminate narrow 1-pixel tractor tracks and speckles
         k_open = ndimage.generate_binary_structure(2, 1)
         grid = ndimage.binary_opening(grid, structure=k_open, iterations=1)
 
-        # 6. Distance Transform Wide Core Excision: eliminate broad open fields & pastures
-        #    Identifies wide interiors (half-width > 6.0m) and excises the core AND its 8m perimeter margin.
-        #    This completely prevents hollow donut ring artifacts along field borders.
+        # 6. Wide Open Area Excision: eliminate broad open fields, pastures, clearcuts, and quarries
+        #    Dilates open area cores outward to completely eradicate the outer rim margin of open areas
         dist_field = ndimage.distance_transform_edt(grid) * res
         field_thresh = max(6.0, max_corridor_width_m * 0.5)
         field_cores = dist_field > field_thresh
         if np.any(field_cores):
-            dist_from_cores = ndimage.distance_transform_edt(~field_cores) * res
-            grid = grid & (dist_from_cores > (field_thresh + 2.0))
+            iter_dilate = int(np.ceil((field_thresh + 2.0) / res))
+            wide_zones = ndimage.binary_dilation(
+                field_cores,
+                structure=ndimage.generate_binary_structure(2, 1),
+                iterations=iter_dilate
+            )
+            grid = grid & ~wide_zones
 
         if ctx:
             ctx.progress(65, "Evaluating corridor elongation and geometric linearity...")
@@ -346,7 +628,7 @@ class RoadPavementClassifier:
         dist_trans = ndimage.distance_transform_edt(grid) * res
         valid_labels = []
 
-        min_area = max(20.0, min_corridor_area_m2)
+        min_area = max(50.0, min_corridor_area_m2)
         for lbl in range(1, num_features + 1):
             comp_area_m2 = sizes[lbl - 1] * res * res
             if comp_area_m2 < min_area:
@@ -360,8 +642,9 @@ class RoadPavementClassifier:
             ratio = est_len / mean_w
 
             # Road corridors are linear ribbons with bounded mean width and high aspect ratio
-            if max_w <= (max_corridor_width_m * 1.25) and est_len >= 35.0 and ratio >= 2.5:
+            if max_w <= (max_corridor_width_m * 1.25) and est_len >= 30.0 and ratio >= 2.5:
                 valid_labels.append(lbl)
+
 
         road_grid = np.isin(labeled, valid_labels)
 
@@ -504,6 +787,50 @@ class RoadSurfaceEngine:
             ctx=ctx
         )
 
+        # 1. Trace candidate 3D Centerlines and apply Network Topology & Tortuosity Filtering
+        if ctx:
+            ctx.progress(75, "Extracting centerline skeletons and topological corridor network...")
+        skel = RoadCenterlineSkeletonizer.zhang_suen_thinning(road_grid)
+        raw_lines = RoadCenterlineSkeletonizer.trace_centerlines(
+            skel=skel,
+            dtm=dtm,
+            dist_trans=dist_trans,
+            x_min=x_min,
+            y_min=y_min,
+            res=grid_res,
+            ny=ny,
+            min_line_length_m=35.0
+        )
+        lines = RoadCenterlineSkeletonizer.filter_and_stitch_network(
+            raw_lines,
+            min_seed_length_m=65.0,
+            max_seed_tortuosity=1.35,
+            max_branch_tortuosity=1.45,
+            connection_tolerance_m=45.0,
+            dtm=dtm,
+            x_min=x_min,
+            y_min=y_min,
+            res=grid_res,
+            ny=ny
+        )
+
+
+        # 2. Synchronize road_grid with confirmed road network corridors
+        if len(lines) > 0:
+            line_grid = np.zeros((ny, nx), dtype=bool)
+            for l in lines:
+                for p in l["coords"]:
+                    c = int((p[0] - x_min) / grid_res)
+                    r = (ny - 1) - int((p[1] - y_min) / grid_res)
+                    if 0 <= r < ny and 0 <= c < nx:
+                        line_grid[r, c] = True
+
+            dist_to_lines = ndimage.distance_transform_edt(~line_grid) * grid_res
+            corridor_limit = max(4.0, max_corridor_width_m * 0.75)
+            road_grid = road_grid & (dist_to_lines <= corridor_limit)
+            dist_trans = ndimage.distance_transform_edt(road_grid) * grid_res
+
+        # 3. Map synchronized road corridor mask back to candidate LiDAR returns
         road_indices = RoadPavementClassifier.identify_road_points(
             coords=coords,
             candidate_indices=candidate_indices,
@@ -547,20 +874,7 @@ class RoadSurfaceEngine:
                 base = os.path.splitext(output_las_path)[0]
                 output_vector_path = f"{base}_corridor.gpkg"
 
-            # 1. Trace 3D Centerlines from medial skeleton
-            skel = RoadCenterlineSkeletonizer.zhang_suen_thinning(road_grid)
-            lines = RoadCenterlineSkeletonizer.trace_centerlines(
-                skel=skel,
-                dtm=dtm,
-                dist_trans=dist_trans,
-                x_min=x_min,
-                y_min=y_min,
-                res=grid_res,
-                ny=ny,
-                min_line_length_m=20.0
-            )
-
-            # 2. Write polygon boundaries and centerlines into GeoPackage
+            # Write polygon boundaries and centerlines into GeoPackage
             RoadVectorWriter.write_pavement_boundary(
                 points=coords[road_indices] if road_count > 0 else np.empty((0, 3)),
                 out_path=output_vector_path,

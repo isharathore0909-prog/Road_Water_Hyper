@@ -39,6 +39,12 @@ class GLPointCloudCanvas(QOpenGLWidget):
         self._last_pos = QPoint()
         self.color_dict = {}
 
+        # Hardware-accelerated GPU VBOs (persistent VRAM buffers)
+        self._vbo_pts = None
+        self._vbo_col = None
+        self._vbo_needs_pts_upload = False
+        self._vbo_needs_col_upload = False
+
     def set_point_data(self, pts_xyz, rgb_colors, z_colors, class_colors, intensity_colors, mode="auto", color_dict=None):
         def _to_f32(arr):
             if arr is None:
@@ -87,6 +93,8 @@ class GLPointCloudCanvas(QOpenGLWidget):
             self.pan_x = 0.0
             self.pan_y = 0.0
 
+        self._vbo_needs_pts_upload = True
+        self._vbo_needs_col_upload = True
         self.update()
 
     def set_color_mode(self, mode_str: str):
@@ -106,6 +114,7 @@ class GLPointCloudCanvas(QOpenGLWidget):
             self.current_colors = self.intensity_colors
         else:
             self.current_colors = self.z_colors
+        self._vbo_needs_col_upload = True
         self.update()
 
     def set_point_size(self, size: float):
@@ -201,26 +210,51 @@ class GLPointCloudCanvas(QOpenGLWidget):
             glEnable(GL_DEPTH_TEST)
             glDepthFunc(GL_LEQUAL)
 
+            import ctypes
+            self._sync_vbos()
+
             try:
-                glEnableClientState(GL_VERTEX_ARRAY)
-                pts = np.ascontiguousarray(self.pts_xyz, dtype=np.float32)
-                glVertexPointer(3, GL_FLOAT, 0, pts)
+                if self._vbo_pts is not None:
+                    # ── Pure GPU Path: Zero PCIe bus transfer during camera navigation ──
+                    glBindBuffer(GL_ARRAY_BUFFER, self._vbo_pts)
+                    glEnableClientState(GL_VERTEX_ARRAY)
+                    glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
 
-                colors = self.current_colors if (self.current_colors is not None and len(self.current_colors) == len(self.pts_xyz)) else self.z_colors
-                if colors is not None and len(colors) == len(self.pts_xyz):
-                    glEnableClientState(GL_COLOR_ARRAY)
-                    col = np.ascontiguousarray(colors, dtype=np.float32)
-                    glColorPointer(3, GL_FLOAT, 0, col)
+                    if self._vbo_col is not None:
+                        glBindBuffer(GL_ARRAY_BUFFER, self._vbo_col)
+                        glEnableClientState(GL_COLOR_ARRAY)
+                        glColorPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
+                    else:
+                        glDisableClientState(GL_COLOR_ARRAY)
+                        glColor3f(0.25, 0.85, 0.45)
+
+                    glDrawArrays(GL_POINTS, 0, len(self.pts_xyz))
+                    glBindBuffer(GL_ARRAY_BUFFER, 0)
                 else:
-                    glDisableClientState(GL_COLOR_ARRAY)
-                    glColor3f(0.25, 0.85, 0.45)
+                    # ── Fallback Path: Client-side arrays ──
+                    glEnableClientState(GL_VERTEX_ARRAY)
+                    pts = np.ascontiguousarray(self.pts_xyz, dtype=np.float32)
+                    glVertexPointer(3, GL_FLOAT, 0, pts)
 
-                glDrawArrays(GL_POINTS, 0, len(self.pts_xyz))
+                    colors = self.current_colors if (self.current_colors is not None and len(self.current_colors) == len(self.pts_xyz)) else self.z_colors
+                    if colors is not None and len(colors) == len(self.pts_xyz):
+                        glEnableClientState(GL_COLOR_ARRAY)
+                        col = np.ascontiguousarray(colors, dtype=np.float32)
+                        glColorPointer(3, GL_FLOAT, 0, col)
+                    else:
+                        glDisableClientState(GL_COLOR_ARRAY)
+                        glColor3f(0.25, 0.85, 0.45)
+
+                    glDrawArrays(GL_POINTS, 0, len(self.pts_xyz))
             except Exception:
                 pass
             finally:
                 glDisableClientState(GL_COLOR_ARRAY)
                 glDisableClientState(GL_VERTEX_ARRAY)
+                try:
+                    glBindBuffer(GL_ARRAY_BUFFER, 0)
+                except Exception:
+                    pass
 
             if self.show_bbox:
                 self._draw_bounding_box()
@@ -315,3 +349,54 @@ class GLPointCloudCanvas(QOpenGLWidget):
         zoom_factor = 1.15 ** (-num_steps)
         self.zoom_dist = max(2.0, self.zoom_dist * zoom_factor)
         self.update()
+
+    # ── Hardware GPU VBO Management ──────────────────────────────
+    def _delete_vbos(self):
+        """Releases persistent GPU VRAM buffers to prevent memory leaks."""
+        try:
+            if self._vbo_pts is not None:
+                glDeleteBuffers(1, [self._vbo_pts])
+                self._vbo_pts = None
+            if self._vbo_col is not None:
+                glDeleteBuffers(1, [self._vbo_col])
+                self._vbo_col = None
+        except Exception:
+            pass
+
+    def _sync_vbos(self):
+        """Uploads point data to GPU VRAM once on data/color change."""
+        if self._vbo_needs_pts_upload and self.pts_xyz is not None and len(self.pts_xyz) > 0:
+            try:
+                if self._vbo_pts is None:
+                    self._vbo_pts = glGenBuffers(1)
+                pts = np.ascontiguousarray(self.pts_xyz, dtype=np.float32)
+                glBindBuffer(GL_ARRAY_BUFFER, self._vbo_pts)
+                glBufferData(GL_ARRAY_BUFFER, pts.nbytes, pts, GL_STATIC_DRAW)
+                glBindBuffer(GL_ARRAY_BUFFER, 0)
+                self._vbo_needs_pts_upload = False
+            except Exception:
+                self._vbo_pts = None
+
+        if self._vbo_needs_col_upload:
+            colors = self.current_colors if (self.current_colors is not None and len(self.current_colors) == len(self.pts_xyz)) else self.z_colors
+            if colors is not None and len(colors) == len(self.pts_xyz):
+                try:
+                    if self._vbo_col is None:
+                        self._vbo_col = glGenBuffers(1)
+                    col = np.ascontiguousarray(colors, dtype=np.float32)
+                    glBindBuffer(GL_ARRAY_BUFFER, self._vbo_col)
+                    glBufferData(GL_ARRAY_BUFFER, col.nbytes, col, GL_STATIC_DRAW)
+                    glBindBuffer(GL_ARRAY_BUFFER, 0)
+                except Exception:
+                    self._vbo_col = None
+            elif self._vbo_col is not None:
+                try:
+                    glDeleteBuffers(1, [self._vbo_col])
+                except Exception:
+                    pass
+                self._vbo_col = None
+            self._vbo_needs_col_upload = False
+
+    def closeEvent(self, event):
+        self._delete_vbos()
+        super().closeEvent(event)

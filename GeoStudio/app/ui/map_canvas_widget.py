@@ -61,6 +61,21 @@ class MapCanvasWidget(QWidget):
             self.canvas.enableAntiAliasing(False)  # High-speed point sprite rendering
             self.canvas.setWheelFactor(1.15)
 
+            # Hardware-accelerated GPU viewport (OpenGL) for ultra-fast vector/raster compositing
+            try:
+                from PyQt5.QtWidgets import QOpenGLWidget
+                from PyQt5.QtGui import QSurfaceFormat
+                gl_fmt = QSurfaceFormat()
+                gl_fmt.setRenderableType(QSurfaceFormat.OpenGL)
+                gl_fmt.setSwapBehavior(QSurfaceFormat.DoubleBuffer)
+                gl_fmt.setSamples(2)
+                gl_vp = QOpenGLWidget()
+                gl_vp.setFormat(gl_fmt)
+                self.canvas.setViewport(gl_vp)
+                self._gpu_accelerated = True
+            except Exception:
+                self._gpu_accelerated = False
+
             # High-resolution, flicker-free & crisp rendering configuration
             try:
                 screen = QApplication.primaryScreen()

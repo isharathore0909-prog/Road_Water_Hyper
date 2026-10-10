@@ -1034,10 +1034,11 @@ def build_parameters_form(dialog):
         dialog.form_layout.addRow("Normal Verticality Threshold (|Nz|):", dialog.min_vert_spin)
 
         dialog.min_road_area_spin = QDoubleSpinBox()
-        dialog.min_road_area_spin.setRange(5.0, 500.0)
-        dialog.min_road_area_spin.setValue(20.0)
+        dialog.min_road_area_spin.setRange(5.0, 1000.0)
+        dialog.min_road_area_spin.setValue(50.0)
+        dialog.min_road_area_spin.setSingleStep(10.0)
         dialog.min_road_area_spin.setSuffix(" m²")
-        dialog.min_road_area_spin.setToolTip("Minimum continuous pavement surface area to reject isolated bare patches")
+        dialog.min_road_area_spin.setToolTip("Minimum continuous corridor area (m²) to reject isolated tractor furrows, ruts, and field patches (e.g. 50-100 m² for rural surveys)")
         dialog.form_layout.addRow("Minimum Road Corridor Area:", dialog.min_road_area_spin)
 
         dialog.cb_export_corridor_vec = QCheckBox("Export Road Pavement Boundary Polygon Vector (GPKG)")
