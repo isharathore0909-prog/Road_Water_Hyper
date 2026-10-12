@@ -47,5 +47,5 @@ def launch_algorithm(algo: AlgorithmDefinition, map_canvas=None, main_window=Non
         QMessageBox.information(parent, "Coordinate Capture", "Click anywhere on the map canvas to view coordinates and CRS info.")
         return
 
-    dlg = QgisAlgorithmDialog(algo, map_canvas=map_canvas, parent=parent)
+    dlg = QgisAlgorithmDialog(algo, map_canvas=map_canvas, main_window=main_window, parent=parent or main_window)
     dlg.exec_()

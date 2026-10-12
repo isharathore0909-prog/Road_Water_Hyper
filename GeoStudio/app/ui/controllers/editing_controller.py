@@ -58,13 +58,112 @@ class EditingControllerMixin:
         self.geo_status.showMessage("Nothing to redo.", 2000)
 
     def cut_features(self):
-        self.geo_status.showMessage("Cut feature", 2000)
+        layer = self.layer_panel.get_active_layer()
+        if not layer or layer.type() != QgsMapLayer.VectorLayer:
+            self._info("Please select a vector layer first.")
+            return
+        selected_ids = list(layer.selectedFeatureIds())
+        if not selected_ids:
+            self.geo_status.showMessage("No features selected to cut.", 2000)
+            return
+
+        count = self.copy_features()
+        if not count:
+            return
+
+        if not layer.isEditable():
+            reply = QMessageBox.question(
+                self, "Cut Features",
+                f"Layer '{layer.name()}' is not in edit mode.\n"
+                f"Start editing and remove {count} selected feature(s)?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                layer.startEditing()
+            else:
+                return
+
+        layer.deleteSelectedFeatures()
+        self.map_canvas.refresh_canvas()
+        self.geo_status.showMessage(f"Cut {count} feature(s).", 2500)
 
     def copy_features(self):
-        self.geo_status.showMessage("Copied features", 2000)
+        layer = self.layer_panel.get_active_layer()
+        if not layer or layer.type() != QgsMapLayer.VectorLayer:
+            self._info("Please select a vector layer first.")
+            return 0
+        selected = list(layer.selectedFeatures())
+        if not selected:
+            self.geo_status.showMessage("No features selected to copy.", 2000)
+            return 0
+
+        self._feature_clipboard = {
+            "crs": layer.crs(),
+            "geom_type": layer.geometryType(),
+            "features": [QgsFeature(f) for f in selected]
+        }
+
+        try:
+            from PyQt5.QtWidgets import QApplication
+            wkts = [f.geometry().asWkt() for f in selected if f.geometry() and not f.geometry().isEmpty()]
+            if wkts:
+                QApplication.clipboard().setText("\n".join(wkts))
+        except Exception:
+            pass
+
+        self.geo_status.showMessage(f"Copied {len(selected)} feature(s) to clipboard.", 2500)
+        return len(selected)
 
     def paste_features(self):
-        self.geo_status.showMessage("Pasted features", 2000)
+        clip = getattr(self, "_feature_clipboard", None)
+        if not clip or not clip.get("features"):
+            self.geo_status.showMessage("Feature clipboard is empty.", 2000)
+            return
+
+        layer = self.layer_panel.get_active_layer()
+        if not layer or layer.type() != QgsMapLayer.VectorLayer:
+            self._info("Please select a target vector layer to paste features into.")
+            return
+
+        if not layer.isEditable():
+            reply = QMessageBox.question(
+                self, "Paste Features",
+                f"Layer '{layer.name()}' is not in edit mode.\n"
+                f"Start editing and paste {len(clip['features'])} feature(s)?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                layer.startEditing()
+            else:
+                return
+
+        from qgis.core import QgsCoordinateTransform, QgsProject
+        src_crs = clip.get("crs", layer.crs())
+        xform = None
+        if src_crs.isValid() and layer.crs().isValid() and src_crs != layer.crs():
+            xform = QgsCoordinateTransform(src_crs, layer.crs(), QgsProject.instance())
+
+        pasted = 0
+        target_fields = layer.fields()
+        for src_feat in clip["features"]:
+            new_feat = QgsFeature(target_fields)
+            geom = src_feat.geometry()
+            if geom and not geom.isEmpty():
+                if xform:
+                    geom.transform(xform)
+                new_feat.setGeometry(geom)
+
+            # Copy matching attributes by name
+            for target_idx, target_field in enumerate(target_fields):
+                target_name = target_field.name()
+                if target_name in src_feat.fields().names():
+                    new_feat.setAttribute(target_idx, src_feat[target_name])
+
+            if layer.addFeature(new_feat):
+                pasted += 1
+
+        self.map_canvas.refresh_canvas()
+        self.geo_status.showMessage(f"Pasted {pasted} feature(s) into '{layer.name()}'.", 3000)
 
     def delete_selected(self):
         layer = self.layer_panel.get_active_layer()

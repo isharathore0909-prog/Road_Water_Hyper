@@ -2,15 +2,17 @@
 """
 GeoStudio - Layout Designer Workstation Window
 Professional cartographic design window providing:
-- Full interactive QgsLayoutView canvas with pan, zoom, selection, and handles
-- Exact match to professional GIS layout designer workflow:
+- Full interactive QgsLayoutView canvas with pan, zoom, selection, and drag-to-draw tools
+- Complete GIS layout designer workflow:
     * Top Menus: Layout, Edit, View, Items, Add Item, Atlas, Settings, Help
     * Top Toolbars: Project/Layout, Navigation, Alignment, Distribution
-    * Left Vertical Toolbar: 17 creation and manipulation tools
+    * Left Vertical Toolbar: 14 creation and manipulation tools (Select, Move Item, Add Map,
+      Add Label, Add Legend, Add Scale Bar, Add North Arrow, Add Image, Add Table,
+      Add Shape, Add Line, Add Rectangle, Add Ellipse, Add Arrow)
     * Center Page Canvas with status bar (x, y coordinates in mm, page, zoom %)
     * Upper Right Dock: [Items] [Undo History]
     * Lower Right Dock: [Layout] [Item Properties] [Guides]
-- Vector & Raster Export (PDF, PNG, JPG, TIFF, SVG)
+- Export connected seamlessly to GeoStudio's existing PrintExportDialog (PDF, PNG, JPG, TIFF, SVG)
 - System Printing & Print Preview
 - Canvas-to-Layout and Layout-to-Canvas Extent Synchronization
 """
@@ -21,22 +23,24 @@ from PyQt5.QtWidgets import (
     QToolBar, QMessageBox, QFileDialog, QApplication, QDockWidget,
     QTabWidget, QUndoView, QLabel, QStatusBar, QGroupBox, QFormLayout,
     QComboBox, QDoubleSpinBox, QSpinBox, QCheckBox, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView
+    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView
 )
 from PyQt5.QtCore import Qt, QSize, QPointF
-from PyQt5.QtGui import QIcon, QFont, QColor
+from PyQt5.QtGui import QIcon, QFont, QColor, QPolygonF
 from PyQt5.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from qgis.core import (
     QgsProject, QgsPrintLayout, QgsLayoutItemMap, QgsLayoutItemLabel,
     QgsLayoutItemLegend, QgsLayoutItemScaleBar, QgsLayoutItemPicture,
     QgsLayoutItemShape, QgsLayoutItemPolyline, QgsLayoutItemPolygon,
-    QgsLayoutItemHtml, QgsLayoutSize, QgsLayoutPoint, QgsUnitTypes,
-    QgsLayoutMeasurement
+    QgsLayoutItemHtml, QgsLayoutItemAttributeTable, QgsLayoutSize,
+    QgsLayoutPoint, QgsUnitTypes, QgsLayoutMeasurement, QgsLayoutGuide,
+    QgsLayoutItemRegistry, QgsApplication
 )
 from qgis.gui import (
     QgsLayoutView, QgsLayoutViewToolPan, QgsLayoutViewToolZoom,
-    QgsLayoutViewToolSelect
+    QgsLayoutViewToolSelect, QgsLayoutViewToolMoveItemContent,
+    QgsLayoutViewToolAddItem, QgsLayoutViewToolAddNodeItem
 )
 
 from resources.icons.icon_provider import get_icon
@@ -46,28 +50,69 @@ from .layout_properties_dock import LayoutPropertiesDock
 from .layout_export_dialog import LayoutExportDialog
 
 
+PAGE_PRESETS = {
+    "A4 Portrait": (210.0, 297.0),
+    "A4 Landscape": (297.0, 210.0),
+    "A3 Portrait": (297.0, 420.0),
+    "A3 Landscape": (420.0, 297.0),
+    "A2 Portrait": (420.0, 594.0),
+    "A2 Landscape": (594.0, 420.0),
+    "A1 Portrait": (594.0, 841.0),
+    "A1 Landscape": (841.0, 594.0),
+    "A0 Portrait": (841.0, 1189.0),
+    "A0 Landscape": (1189.0, 841.0),
+    "Letter Landscape": (279.4, 215.9),
+    "Letter Portrait": (215.9, 279.4),
+}
+
+
 class LayoutSettingsTab(QWidget):
-    """Layout settings panel showing General, Guides/Grid, and Export settings."""
+    """Layout settings panel showing General Page Settings, Guides/Grid, and Export settings."""
 
     def __init__(self, designer, parent=None):
         super().__init__(parent)
         self.designer = designer
         self._build_ui()
+        self._load_current_settings()
 
     def _build_ui(self):
         vbox = QVBoxLayout(self)
         vbox.setContentsMargins(8, 8, 8, 8)
         vbox.setSpacing(10)
 
-        # 1. General Settings
-        grp_gen = QGroupBox("General Settings")
+        # 1. Page & General Settings
+        grp_gen = QGroupBox("Page & General Settings")
         f_gen = QFormLayout(grp_gen)
         f_gen.setSpacing(6)
 
+        self.combo_page_size = QComboBox()
+        self.combo_page_size.addItems(list(PAGE_PRESETS.keys()) + ["Custom"])
+        self.combo_page_size.currentTextChanged.connect(self._on_page_preset_changed)
+        f_gen.addRow("Page Preset:", self.combo_page_size)
+
+        h_custom_size = QHBoxLayout()
+        self.spn_page_w = QDoubleSpinBox()
+        self.spn_page_w.setRange(10.0, 5000.0)
+        self.spn_page_w.setValue(297.0)
+        self.spn_page_w.setSuffix(" mm")
+        self.spn_page_w.valueChanged.connect(self._on_custom_page_size_changed)
+
+        self.spn_page_h = QDoubleSpinBox()
+        self.spn_page_h.setRange(10.0, 5000.0)
+        self.spn_page_h.setValue(210.0)
+        self.spn_page_h.setSuffix(" mm")
+        self.spn_page_h.valueChanged.connect(self._on_custom_page_size_changed)
+
+        h_custom_size.addWidget(self.spn_page_w)
+        h_custom_size.addWidget(QLabel("×"))
+        h_custom_size.addWidget(self.spn_page_h)
+        f_gen.addRow("Dimensions:", h_custom_size)
+
         self.combo_ref_map = QComboBox()
-        self.combo_ref_map.addItem("Map Canvas")
+        self.combo_ref_map.addItem("Current Map")
         self.combo_ref_map.currentIndexChanged.connect(self._on_ref_map_changed)
-        f_gen.addRow("Reference map:", self.combo_ref_map)
+        f_gen.addRow("Reference Map:", self.combo_ref_map)
+
         vbox.addWidget(grp_gen)
 
         # 2. Guides and Grid
@@ -77,26 +122,32 @@ class LayoutSettingsTab(QWidget):
 
         h_spacing = QHBoxLayout()
         self.spn_spacing = QDoubleSpinBox()
-        self.spn_spacing.setRange(0.1, 500)
+        self.spn_spacing.setRange(0.1, 500.0)
         self.spn_spacing.setValue(10.0)
+        self.spn_spacing.valueChanged.connect(self._apply_grid_settings)
+
         self.combo_grid_units = QComboBox()
-        self.combo_grid_units.addItems(["mm", "cm", "inch", "px"])
+        self.combo_grid_units.addItems(["mm", "cm", "px"])
+        self.combo_grid_units.currentTextChanged.connect(self._apply_grid_settings)
+
         h_spacing.addWidget(self.spn_spacing, 1)
         h_spacing.addWidget(self.combo_grid_units)
         f_grid.addRow("Grid spacing:", h_spacing)
 
         h_offset_x = QHBoxLayout()
         self.spn_off_x = QDoubleSpinBox()
-        self.spn_off_x.setRange(-500, 500)
+        self.spn_off_x.setRange(-500.0, 500.0)
         self.spn_off_x.setValue(0.0)
+        self.spn_off_x.valueChanged.connect(self._apply_grid_settings)
         h_offset_x.addWidget(self.spn_off_x, 1)
         h_offset_x.addWidget(QLabel("mm"))
         f_grid.addRow("Grid offset X:", h_offset_x)
 
         h_offset_y = QHBoxLayout()
         self.spn_off_y = QDoubleSpinBox()
-        self.spn_off_y.setRange(-500, 500)
+        self.spn_off_y.setRange(-500.0, 500.0)
         self.spn_off_y.setValue(0.0)
+        self.spn_off_y.valueChanged.connect(self._apply_grid_settings)
         h_offset_y.addWidget(self.spn_off_y, 1)
         h_offset_y.addWidget(QLabel("mm"))
         f_grid.addRow("Grid offset Y:", h_offset_y)
@@ -105,6 +156,7 @@ class LayoutSettingsTab(QWidget):
         self.spn_snap_tol.setRange(1, 50)
         self.spn_snap_tol.setValue(5)
         self.spn_snap_tol.setSuffix(" px")
+        self.spn_snap_tol.valueChanged.connect(self._apply_snapping_settings)
         f_grid.addRow("Snap tolerance:", self.spn_snap_tol)
 
         self.chk_show_grid = QCheckBox("Show Grid")
@@ -112,15 +164,17 @@ class LayoutSettingsTab(QWidget):
         f_grid.addRow(self.chk_show_grid)
 
         self.chk_snap_grid = QCheckBox("Snap to Grid")
-        self.chk_snap_grid.toggled.connect(self._on_toggle_snap_grid)
+        self.chk_snap_grid.toggled.connect(self._apply_snapping_settings)
         f_grid.addRow(self.chk_snap_grid)
 
         self.chk_snap_guides = QCheckBox("Snap to Guides")
         self.chk_snap_guides.setChecked(True)
+        self.chk_snap_guides.toggled.connect(self._apply_snapping_settings)
         f_grid.addRow(self.chk_snap_guides)
 
         self.chk_snap_items = QCheckBox("Snap to Items")
         self.chk_snap_items.setChecked(True)
+        self.chk_snap_items.toggled.connect(self._apply_snapping_settings)
         f_grid.addRow(self.chk_snap_items)
 
         vbox.addWidget(grp_grid)
@@ -142,29 +196,127 @@ class LayoutSettingsTab(QWidget):
         self.chk_vectors.setChecked(True)
         f_exp.addRow(self.chk_vectors)
 
+        btn_open_export = QPushButton("Open GeoStudio Export Dialog...")
+        btn_open_export.setStyleSheet("font-weight: bold; padding: 6px;")
+        btn_open_export.clicked.connect(self.designer.open_export_dialog)
+        f_exp.addRow(btn_open_export)
+
         vbox.addWidget(grp_export)
         vbox.addStretch()
+
+    def _load_current_settings(self):
+        if not self.designer.layout:
+            return
+        layout = self.designer.layout
+        pages = layout.pageCollection().pages()
+        if pages:
+            p = pages[0]
+            w = p.pageSize().width()
+            h = p.pageSize().height()
+            self.spn_page_w.blockSignals(True)
+            self.spn_page_h.blockSignals(True)
+            self.spn_page_w.setValue(w)
+            self.spn_page_h.setValue(h)
+            self.spn_page_w.blockSignals(False)
+            self.spn_page_h.blockSignals(False)
+
+            # Match preset
+            matched = False
+            for name, (pw, ph) in PAGE_PRESETS.items():
+                if abs(pw - w) < 1.0 and abs(ph - h) < 1.0:
+                    self.combo_page_size.blockSignals(True)
+                    self.combo_page_size.setCurrentText(name)
+                    self.combo_page_size.blockSignals(False)
+                    matched = True
+                    break
+            if not matched:
+                self.combo_page_size.blockSignals(True)
+                self.combo_page_size.setCurrentText("Custom")
+                self.combo_page_size.blockSignals(False)
+
+        # Snapper settings
+        if hasattr(layout, "snapper") and layout.snapper():
+            s = layout.snapper()
+            self.chk_snap_grid.blockSignals(True)
+            self.chk_snap_grid.setChecked(s.snapToGrid())
+            self.chk_snap_grid.blockSignals(False)
+
+            self.chk_snap_guides.blockSignals(True)
+            self.chk_snap_guides.setChecked(s.snapToGuides())
+            self.chk_snap_guides.blockSignals(False)
+
+            self.chk_snap_items.blockSignals(True)
+            self.chk_snap_items.setChecked(s.snapToItems())
+            self.chk_snap_items.blockSignals(False)
+
+            self.spn_snap_tol.blockSignals(True)
+            self.spn_snap_tol.setValue(s.snapTolerance())
+            self.spn_snap_tol.blockSignals(False)
+
+    def _on_page_preset_changed(self, text):
+        if text in PAGE_PRESETS:
+            w, h = PAGE_PRESETS[text]
+            self.spn_page_w.setValue(w)
+            self.spn_page_h.setValue(h)
+            self._set_page_size(w, h)
+
+    def _on_custom_page_size_changed(self):
+        w = self.spn_page_w.value()
+        h = self.spn_page_h.value()
+        self._set_page_size(w, h)
+
+    def _set_page_size(self, w: float, h: float):
+        if not self.designer.layout:
+            return
+        pages = self.designer.layout.pageCollection().pages()
+        if pages:
+            pages[0].attemptResize(QgsLayoutSize(w, h, QgsUnitTypes.LayoutMillimeters))
+            self.designer.view.update()
+            self.designer.zoom_to_page()
+
+    def _apply_grid_settings(self):
+        if not self.designer.layout or not hasattr(self.designer.layout, "gridSettings"):
+            return
+        gs = self.designer.layout.gridSettings()
+        val = self.spn_spacing.value()
+        unit_str = self.combo_grid_units.currentText()
+        unit = QgsUnitTypes.LayoutMillimeters
+        if unit_str == "cm":
+            unit = QgsUnitTypes.LayoutCentimeters
+        elif unit_str == "px":
+            unit = QgsUnitTypes.LayoutPixels
+
+        gs.setResolution(QgsLayoutMeasurement(val, unit))
+        gs.setOffset(QgsLayoutPoint(self.spn_off_x.value(), self.spn_off_y.value(), unit))
+        self.designer.view.update()
+
+    def _apply_snapping_settings(self):
+        if not self.designer.layout or not hasattr(self.designer.layout, "snapper"):
+            return
+        snapper = self.designer.layout.snapper()
+        snapper.setSnapToGrid(self.chk_snap_grid.isChecked())
+        snapper.setSnapToGuides(self.chk_snap_guides.isChecked())
+        snapper.setSnapToItems(self.chk_snap_items.isChecked())
+        snapper.setSnapTolerance(self.spn_snap_tol.value())
+
+    def _on_toggle_grid(self, checked):
+        if not self.designer.layout:
+            return
+        self.designer.layout.renderContext().setGridVisible(checked)
+        self.designer.view.update()
 
     def refresh_maps(self):
         self.combo_ref_map.blockSignals(True)
         self.combo_ref_map.clear()
-        self.combo_ref_map.addItem("Map Canvas")
+        self.combo_ref_map.addItem("Current Map")
         if self.designer.layout:
             for item in self.designer.layout.items():
                 if isinstance(item, QgsLayoutItemMap):
-                    name = item.id() or "Map"
+                    name = item.id() or "Map Frame"
                     self.combo_ref_map.addItem(name)
         self.combo_ref_map.blockSignals(False)
 
     def _on_ref_map_changed(self, idx):
-        pass
-
-    def _on_toggle_grid(self, checked):
-        if self.designer.layout:
-            grid = self.designer.layout.renderContext().grid() if hasattr(self.designer.layout.renderContext(), "grid") else None
-            self.designer.view.update()
-
-    def _on_toggle_snap_grid(self, checked):
         pass
 
 
@@ -175,20 +327,36 @@ class GuidesTab(QWidget):
         super().__init__(parent)
         self.designer = designer
         self._build_ui()
+        self._refresh_guides_table()
 
     def _build_ui(self):
         vbox = QVBoxLayout(self)
         vbox.setContentsMargins(8, 8, 8, 8)
         vbox.setSpacing(6)
 
-        lbl = QLabel("Page Guides (mm)")
+        lbl = QLabel("Layout Guides (mm)")
         lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
         vbox.addWidget(lbl)
+
+        # Checkboxes for guides visibility & snapping
+        h_chk = QHBoxLayout()
+        self.chk_show_guides = QCheckBox("Show Guides")
+        self.chk_show_guides.setChecked(True)
+        self.chk_show_guides.toggled.connect(self._on_toggle_show_guides)
+        h_chk.addWidget(self.chk_show_guides)
+
+        self.chk_snap_guides = QCheckBox("Snap to Guides")
+        self.chk_snap_guides.setChecked(True)
+        self.chk_snap_guides.toggled.connect(self._on_toggle_snap_guides)
+        h_chk.addWidget(self.chk_snap_guides)
+        vbox.addLayout(h_chk)
 
         self.table_guides = QTableWidget(0, 2)
         self.table_guides.setHorizontalHeaderLabels(["Orientation", "Position (mm)"])
         self.table_guides.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table_guides.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_guides.setStyleSheet("background: white; border: 1px solid #cbd5e1;")
+        self.table_guides.itemChanged.connect(self._on_guide_cell_changed)
         vbox.addWidget(self.table_guides, 1)
 
         h_ctrl = QHBoxLayout()
@@ -200,26 +368,94 @@ class GuidesTab(QWidget):
         self.btn_add_v.clicked.connect(self._add_vertical_guide)
         h_ctrl.addWidget(self.btn_add_v)
 
-        self.btn_clear = QPushButton("Clear")
+        self.btn_del = QPushButton("Delete")
+        self.btn_del.clicked.connect(self._delete_selected_guide)
+        h_ctrl.addWidget(self.btn_del)
+
+        self.btn_clear = QPushButton("Clear All")
         self.btn_clear.clicked.connect(self._clear_guides)
         h_ctrl.addWidget(self.btn_clear)
 
         vbox.addLayout(h_ctrl)
 
+    def _on_toggle_show_guides(self, checked):
+        if self.designer.layout and hasattr(self.designer.layout, "guides"):
+            self.designer.layout.guides().setVisible(checked)
+            self.designer.view.update()
+
+    def _on_toggle_snap_guides(self, checked):
+        if self.designer.layout and hasattr(self.designer.layout, "snapper"):
+            self.designer.layout.snapper().setSnapToGuides(checked)
+
+    def _refresh_guides_table(self):
+        if not self.designer.layout or not hasattr(self.designer.layout, "guides"):
+            return
+        self.table_guides.blockSignals(True)
+        self.table_guides.setRowCount(0)
+        guides = self.designer.layout.guides().guides()
+        for g in guides:
+            row = self.table_guides.rowCount()
+            self.table_guides.insertRow(row)
+            orient_str = "Horizontal" if g.orientation() == Qt.Horizontal else "Vertical"
+            self.table_guides.setItem(row, 0, QTableWidgetItem(orient_str))
+            pos_val = round(g.layoutPosition(), 2)
+            self.table_guides.setItem(row, 1, QTableWidgetItem(str(pos_val)))
+        self.table_guides.blockSignals(False)
+
     def _add_horizontal_guide(self):
-        row = self.table_guides.rowCount()
-        self.table_guides.insertRow(row)
-        self.table_guides.setItem(row, 0, QTableWidgetItem("Horizontal"))
-        self.table_guides.setItem(row, 1, QTableWidgetItem("50.0"))
+        if not self.designer.layout:
+            return
+        pages = self.designer.layout.pageCollection().pages()
+        if not pages:
+            return
+        page = pages[0]
+        pos = round(page.pageSize().height() / 2.0, 1)
+        guide = QgsLayoutGuide(Qt.Horizontal, QgsLayoutMeasurement(pos, QgsUnitTypes.LayoutMillimeters), page)
+        self.designer.layout.guides().addGuide(guide)
+        self.designer.view.update()
+        self._refresh_guides_table()
 
     def _add_vertical_guide(self):
-        row = self.table_guides.rowCount()
-        self.table_guides.insertRow(row)
-        self.table_guides.setItem(row, 0, QTableWidgetItem("Vertical"))
-        self.table_guides.setItem(row, 1, QTableWidgetItem("50.0"))
+        if not self.designer.layout:
+            return
+        pages = self.designer.layout.pageCollection().pages()
+        if not pages:
+            return
+        page = pages[0]
+        pos = round(page.pageSize().width() / 2.0, 1)
+        guide = QgsLayoutGuide(Qt.Vertical, QgsLayoutMeasurement(pos, QgsUnitTypes.LayoutMillimeters), page)
+        self.designer.layout.guides().addGuide(guide)
+        self.designer.view.update()
+        self._refresh_guides_table()
+
+    def _delete_selected_guide(self):
+        row = self.table_guides.currentRow()
+        if row < 0 or not self.designer.layout:
+            return
+        guides = list(self.designer.layout.guides().guides())
+        if row < len(guides):
+            self.designer.layout.guides().removeGuide(guides[row])
+            self.designer.view.update()
+            self._refresh_guides_table()
 
     def _clear_guides(self):
-        self.table_guides.setRowCount(0)
+        if self.designer.layout and hasattr(self.designer.layout, "guides"):
+            self.designer.layout.guides().clear()
+            self.designer.view.update()
+            self._refresh_guides_table()
+
+    def _on_guide_cell_changed(self, item):
+        row = item.row()
+        if row < 0 or not self.designer.layout:
+            return
+        try:
+            val = float(self.table_guides.item(row, 1).text())
+            guides = list(self.designer.layout.guides().guides())
+            if row < len(guides):
+                self.designer.layout.guides().setGuideLayoutPosition(guides[row], val)
+                self.designer.view.update()
+        except ValueError:
+            pass
 
 
 class GeoStudioLayoutDesignerWindow(QMainWindow):
@@ -229,8 +465,14 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
 
     def __init__(self, layout, main_window=None, parent=None):
         super().__init__(parent or main_window)
+        if layout is None:
+            from qgis.core import QgsProject, QgsPrintLayout
+            layout = QgsPrintLayout(QgsProject.instance())
+            layout.initializeDefaults()
         self.layout = layout
         self.mw = main_window
+
+        self._pending_tool_type = None
 
         layout_name = layout.name() if layout else "Layout Designer"
         self.setWindowTitle(f"GeoStudio Layout Designer — {layout_name}")
@@ -252,27 +494,51 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
     def _build_ui(self):
         # 1. Central Canvas View
         self.view = QgsLayoutView(self)
-        self.view.setCurrentLayout(self.layout)
+        if self.layout:
+            self.view.setCurrentLayout(self.layout)
         self.setCentralWidget(self.view)
 
         # Interactive Tools
         self.tool_select = QgsLayoutViewToolSelect(self.view)
+        if self.layout and hasattr(self.tool_select, "setLayout"):
+            try:
+                self.tool_select.setLayout(self.layout)
+            except Exception as e:
+                print(f"[Warning] Failed to set layout on tool_select: {e}")
+
+        # Keep tool_select synchronized whenever layout changes to ensure mouse handles are valid
+        try:
+            self.view.layoutSet.connect(self._on_layout_set)
+        except Exception:
+            pass
+
         self.tool_pan = QgsLayoutViewToolPan(self.view)
         self.tool_zoom = QgsLayoutViewToolZoom(self.view)
+        self.tool_move_content = QgsLayoutViewToolMoveItemContent(self.view)
+        self.tool_add_item = QgsLayoutViewToolAddItem(self.view)
+        self.tool_add_node = QgsLayoutViewToolAddNodeItem(self.view)
+
+        # Connect tool callbacks
+        self.tool_add_item.createdItem.connect(self._on_item_created_interactive)
+        self.tool_add_node.createdItem.connect(self._on_item_created_interactive)
+
+        # Default tool is select
         self.view.setTool(self.tool_select)
+
+        # Track mouse moves for mm coordinates in status bar
+        self.view.cursorPosChanged.connect(self._on_view_mouse_moved)
 
         # 2. Upper Right Dock: [Items] [Undo History]
         self.upper_dock = QDockWidget("Items & History", self)
         self.upper_dock.setObjectName("layout_upper_dock")
-        self.upper_dock.setMinimumWidth(260)
-        self.upper_dock.setMaximumWidth(420)
+        self.upper_dock.setMinimumWidth(280)
+        self.upper_dock.setMaximumWidth(450)
 
         self.tab_upper = QTabWidget(self.upper_dock)
         self.tab_upper.setStyleSheet("QTabWidget::pane { border: 1px solid #cbd5e1; background: white; }")
 
         # Items panel widget
         self.items_dock_widget = LayoutItemsDock(self, self)
-        # Keep reference as items_dock for backward compatibility
         self.items_dock = self.items_dock_widget
         self.tab_upper.addTab(self.items_dock_widget.widget(), "Items")
 
@@ -290,8 +556,8 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
         # 3. Lower Right Dock: [Layout] [Item Properties] [Guides]
         self.lower_dock = QDockWidget("Properties & Settings", self)
         self.lower_dock.setObjectName("layout_lower_dock")
-        self.lower_dock.setMinimumWidth(260)
-        self.lower_dock.setMaximumWidth(420)
+        self.lower_dock.setMinimumWidth(280)
+        self.lower_dock.setMaximumWidth(450)
 
         self.tab_lower = QTabWidget(self.lower_dock)
         self.tab_lower.setStyleSheet("QTabWidget::pane { border: 1px solid #cbd5e1; background: white; }")
@@ -322,6 +588,10 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
 
     def _build_status_bar(self):
         sb = self.statusBar()
+        self.lbl_status_tool = QLabel("Tool: Select")
+        self.lbl_status_tool.setStyleSheet("color: #0f172a; font-weight: 600; padding: 2px 10px;")
+        sb.addWidget(self.lbl_status_tool)
+
         self.lbl_status_pos = QLabel("x: 0.0 mm  y: 0.0 mm")
         self.lbl_status_pos.setStyleSheet("color: #475569; padding: 2px 8px;")
         sb.addPermanentWidget(self.lbl_status_pos)
@@ -330,9 +600,32 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
         self.lbl_status_page.setStyleSheet("color: #475569; padding: 2px 8px;")
         sb.addPermanentWidget(self.lbl_status_page)
 
-        self.lbl_status_zoom = QLabel("57.0%")
+        self.lbl_status_zoom = QLabel("100.0%")
         self.lbl_status_zoom.setStyleSheet("color: #475569; padding: 2px 8px;")
         sb.addPermanentWidget(self.lbl_status_zoom)
+
+    def _on_view_mouse_moved(self, point_snapped):
+        if point_snapped:
+            x_val = round(point_snapped.x(), 1)
+            y_val = round(point_snapped.y(), 1)
+            self.lbl_status_pos.setText(f"x: {x_val} mm  y: {y_val} mm")
+
+    def _on_layout_set(self, layout):
+        """Keep tool_select synchronized whenever the view's layout changes."""
+        if hasattr(self, "tool_select") and self.tool_select and layout:
+            try:
+                self.tool_select.setLayout(layout)
+            except Exception:
+                pass
+
+    def closeEvent(self, event):
+        """Safely deactivate interactive tools when window is closed."""
+        try:
+            if hasattr(self, "tool_select") and self.tool_select:
+                self.tool_select.deactivate()
+        except Exception:
+            pass
+        event.accept()
 
     def _connect_signals(self):
         self.items_dock.item_selected.connect(self._on_item_selected)
@@ -343,6 +636,140 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
         self.props_dock.set_item(item)
         if item:
             self.tab_lower.setCurrentIndex(1)  # switch to Item Properties tab
+
+    # ── Interactive Tool Activation ──────────────────────────────
+    def _activate_add_item_tool(self, metadata_id: int, tool_type: str):
+        self._pending_tool_type = tool_type
+        self.tool_add_item.setItemMetadataId(metadata_id)
+        self.view.setTool(self.tool_add_item)
+        name_map = {
+            "map": "Add Map (drag rectangle on page)",
+            "label": "Add Label (drag rectangle on page)",
+            "legend": "Add Legend (drag rectangle on page)",
+            "scalebar": "Add Scale Bar (drag rectangle on page)",
+            "north_arrow": "Add North Arrow (drag rectangle on page)",
+            "image": "Add Image (drag rectangle on page)",
+            "table": "Add Table (drag rectangle on page)",
+            "shape": "Add Shape (drag rectangle on page)",
+            "rectangle": "Add Rectangle (drag rectangle on page)",
+            "ellipse": "Add Ellipse (drag rectangle on page)"
+        }
+        self.lbl_status_tool.setText(f"Tool: {name_map.get(tool_type, 'Add Item')}")
+
+    def _activate_add_node_tool(self, metadata_id: int, tool_type: str):
+        self._pending_tool_type = tool_type
+        self.tool_add_node.setItemMetadataId(metadata_id)
+        self.view.setTool(self.tool_add_node)
+        self.lbl_status_tool.setText(f"Tool: Add {tool_type.capitalize()} (click points, right-click to finish)")
+
+    def _on_item_created_interactive(self, item):
+        """Called automatically by PyQGIS QgsLayoutViewToolAddItem when rectangle is drawn."""
+        if not item or not self.layout:
+            return
+
+        tt = self._pending_tool_type or ""
+
+        if tt == "map" or isinstance(item, QgsLayoutItemMap):
+            map_count = len([i for i in self.layout.items() if isinstance(i, QgsLayoutItemMap)])
+            item.setId(f"Map {map_count}")
+            main_canvas = getattr(self.mw, "map_canvas", None)
+            if main_canvas and main_canvas.canvas:
+                item.setExtent(main_canvas.canvas.extent())
+                item.setCrs(main_canvas.canvas.mapSettings().destinationCrs())
+                item.setLayers(main_canvas.canvas.layers())
+            item.setFrameEnabled(True)
+            item.setBackgroundColor(QColor("#ffffff"))
+
+        elif tt == "label" or isinstance(item, QgsLayoutItemLabel):
+            label_count = len([i for i in self.layout.items() if isinstance(i, QgsLayoutItemLabel)])
+            item.setId(f"Title {label_count}")
+            item.setText("Map Title")
+            f = item.font()
+            f.setFamily("Segoe UI")
+            f.setPointSize(16)
+            f.setBold(True)
+            item.setFont(f)
+
+        elif tt == "legend" or isinstance(item, QgsLayoutItemLegend):
+            item.setId("Legend")
+            item.setTitle("Legend")
+            item.setLinkedMap(self.get_main_map_item())
+            item.setFrameEnabled(True)
+            item.setBackgroundColor(QColor(255, 255, 255, 230))
+
+        elif tt == "scalebar" or isinstance(item, QgsLayoutItemScaleBar):
+            item.setId("Scale Bar")
+            item.setLinkedMap(self.get_main_map_item())
+            item.setStyle("Single Box")
+            item.setUnits(QgsUnitTypes.DistanceKilometers)
+            item.setBackgroundEnabled(True)
+            item.setBackgroundColor(QColor(255, 255, 255, 220))
+
+        elif tt == "north_arrow":
+            if isinstance(item, QgsLayoutItemPicture):
+                item.setId("North Arrow")
+                item.setLinkedMap(self.get_main_map_item())
+                svg_path = self._find_north_arrow_svg()
+                if svg_path:
+                    item.setPicturePath(svg_path)
+                item.setBackgroundEnabled(True)
+                item.setBackgroundColor(QColor(255, 255, 255, 200))
+
+        elif tt == "image":
+            if isinstance(item, QgsLayoutItemPicture):
+                item.setId("Logo / Image")
+                path, _ = QFileDialog.getOpenFileName(self, "Choose Image", "", "Images (*.png *.jpg *.jpeg *.svg *.webp)")
+                if path:
+                    item.setPicturePath(path)
+
+        elif tt == "rectangle":
+            if isinstance(item, QgsLayoutItemShape):
+                item.setId(f"Rectangle {len([i for i in self.layout.items() if isinstance(i, QgsLayoutItemShape)])}")
+                item.setShapeType(QgsLayoutItemShape.Rectangle)
+                item.setFrameEnabled(True)
+
+        elif tt == "ellipse":
+            if isinstance(item, QgsLayoutItemShape):
+                item.setId(f"Ellipse {len([i for i in self.layout.items() if isinstance(i, QgsLayoutItemShape)])}")
+                item.setShapeType(QgsLayoutItemShape.Ellipse)
+                item.setFrameEnabled(True)
+
+        elif tt == "arrow":
+            if isinstance(item, QgsLayoutItemPolyline):
+                item.setId("Arrow")
+                item.setEndMarker(QgsLayoutItemPolyline.ArrowHead)
+
+        elif tt == "line":
+            if isinstance(item, QgsLayoutItemPolyline):
+                item.setId("Line")
+
+        elif tt == "table":
+            if isinstance(item, QgsLayoutItemAttributeTable):
+                item.setId("Attribute Table")
+                main_canvas = getattr(self.mw, "map_canvas", None)
+                if main_canvas and main_canvas.canvas and main_canvas.canvas.layers():
+                    item.setVectorLayer(main_canvas.canvas.layers()[0])
+
+        # Reset tool to select
+        self.view.setTool(self.tool_select)
+        self.lbl_status_tool.setText("Tool: Select")
+        self._pending_tool_type = None
+
+        self.layout.setSelectedItem(item)
+        self.items_dock.refresh_items()
+        self.tab_layout_settings.refresh_maps()
+        self.props_dock.set_item(item)
+
+    def _find_north_arrow_svg(self) -> str:
+        """Find default QGIS north arrow SVG path."""
+        for p in QgsApplication.svgPaths():
+            candidate = os.path.join(p, "arrows", "NorthArrow_02.svg")
+            if os.path.exists(candidate):
+                return candidate
+            candidate1 = os.path.join(p, "arrows", "NorthArrow_01.svg")
+            if os.path.exists(candidate1):
+                return candidate1
+        return ""
 
     # ── Menus Construction ──────────────────────────────────────
     def _build_menus(self):
@@ -357,6 +784,7 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
         m_layout.addAction("Save As...", self.duplicate_layout)
         m_layout.addSeparator()
         m_layout.addAction(get_icon("print_map"), "Print...", self.print_layout, "Ctrl+P")
+        m_layout.addAction("Export Layout (GeoStudio)...", self.open_export_dialog, "Ctrl+E")
         m_layout.addAction("Export as PDF...", self.export_pdf, "Ctrl+Shift+P")
         m_layout.addAction("Export as Image...", self.export_image)
         m_layout.addAction("Export as SVG...", self.export_svg)
@@ -406,19 +834,17 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
 
         # 5. Add Item
         m_add = mb.addMenu("&Add Item")
-        m_add.addAction(get_icon("new_project"), "Add Map Frame", self.add_map_item)
-        m_add.addAction(get_icon("3d"), "Add 3D Map", self.add_3d_map_item)
-        m_add.addAction(get_icon("edit"), "Add Title / Label", self.add_label_item)
-        m_add.addAction(get_icon("layer_properties"), "Add Legend", self.add_legend_item)
-        m_add.addAction(get_icon("measure_dist"), "Add Scale Bar", self.add_scalebar_item)
-        m_add.addAction(get_icon("pan"), "Add North Arrow", self.add_north_arrow_item)
-        m_add.addAction(get_icon("save_project"), "Add Image / Logo", self.add_image_item)
-        m_add.addAction("Add Shape (Rectangle)", self.add_shape_item)
-        m_add.addAction("Add Shape (Ellipse)", self.add_ellipse_item)
-        m_add.addAction("Add Arrow / Line", self.add_line_item)
-        m_add.addAction("Add Polygon / Node Item", self.add_polygon_item)
-        m_add.addAction("Add HTML / Text Block", self.add_html_item)
-        m_add.addAction("Add Attribute Table", self.add_table_item)
+        m_add.addAction(get_icon("new_project"), "Add Map", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutMap, "map"))
+        m_add.addAction(get_icon("edit"), "Add Label / Title", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutLabel, "label"))
+        m_add.addAction(get_icon("layer_properties"), "Add Legend", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutLegend, "legend"))
+        m_add.addAction(get_icon("measure_dist"), "Add Scale Bar", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutScaleBar, "scalebar"))
+        m_add.addAction(get_icon("pan"), "Add North Arrow", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutPicture, "north_arrow"))
+        m_add.addAction(get_icon("save_project"), "Add Image / Logo", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutPicture, "image"))
+        m_add.addAction("Add Table", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutAttributeTable, "table"))
+        m_add.addAction("Add Shape (Rectangle)", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutShape, "rectangle"))
+        m_add.addAction("Add Ellipse", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutShape, "ellipse"))
+        m_add.addAction("Add Line", lambda: self._activate_add_node_tool(QgsLayoutItemRegistry.LayoutPolyline, "line"))
+        m_add.addAction("Add Arrow", lambda: self._activate_add_node_tool(QgsLayoutItemRegistry.LayoutPolyline, "arrow"))
 
         # 6. Atlas
         m_atlas = mb.addMenu("&Atlas")
@@ -445,6 +871,7 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
         tb_layout.addAction("Save As", self.duplicate_layout)
         tb_layout.addSeparator()
         tb_layout.addAction(get_icon("print_map"), "Print", self.print_layout)
+        tb_layout.addAction("Export Layout", self.open_export_dialog)
         tb_layout.addAction("Export PDF", self.export_pdf)
         tb_layout.addAction("Export Image", self.export_image)
         tb_layout.addAction("Export SVG", self.export_svg)
@@ -470,8 +897,9 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
         tb_nav_align.addAction(get_icon("refresh"), "Refresh", self.refresh_layout)
         tb_nav_align.addSeparator()
 
-        tb_nav_align.addAction(get_icon("pan"), "Pan", lambda: self.view.setTool(self.tool_pan))
-        tb_nav_align.addAction(get_icon("select_single"), "Select", lambda: self.view.setTool(self.tool_select))
+        tb_nav_align.addAction(get_icon("pan"), "Pan View", self.set_tool_pan)
+        tb_nav_align.addAction(get_icon("select_single"), "Select Item", self.set_tool_select)
+        tb_nav_align.addAction("Move Item Content", self.set_tool_move_content)
         tb_nav_align.addSeparator()
 
         tb_nav_align.addAction("Align Left", lambda: self._align_items("left"))
@@ -487,37 +915,48 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
         tb_nav_align.addSeparator()
 
         tb_nav_align.addAction("Lock", self.items_dock._toggle_selected_lock)
-        tb_nav_align.addAction("Sync Canvas", self.sync_extent_from_canvas)
-        tb_nav_align.addAction("Apply Extent", self.sync_canvas_from_map)
+        tb_nav_align.addAction("Sync From Canvas", self.sync_extent_from_canvas)
+        tb_nav_align.addAction("Apply Extent to Canvas", self.sync_canvas_from_map)
 
-        # ── Left Vertical Toolbar: Layout Creation Tools ────────
+        # ── Left Vertical Toolbar: Layout Creation Tools (14 Tools) ──
         tb_left = QToolBar("Layout Tools", self)
         tb_left.setOrientation(Qt.Vertical)
         tb_left.setIconSize(QSize(20, 20))
         self.addToolBar(Qt.LeftToolBarArea, tb_left)
 
-        tb_left.addAction(get_icon("select_single"), "Select / Move Item", lambda: self.view.setTool(self.tool_select))
-        tb_left.addAction(get_icon("pan"), "Pan View", lambda: self.view.setTool(self.tool_pan))
-        tb_left.addAction(get_icon("zoom_in"), "Zoom", lambda: self.view.setTool(self.tool_zoom))
+        tb_left.addAction(get_icon("select_single"), "Select Item", self.set_tool_select)
+        tb_left.addAction(get_icon("pan"), "Move Item Content", self.set_tool_move_content)
         tb_left.addSeparator()
 
-        tb_left.addAction(get_icon("new_project"), "Add Map", self.add_map_item)
-        tb_left.addAction(get_icon("3d"), "Add 3D Map", self.add_3d_map_item)
-        tb_left.addAction(get_icon("edit"), "Add Label", self.add_label_item)
-        tb_left.addAction(get_icon("layer_properties"), "Add Legend", self.add_legend_item)
-        tb_left.addAction(get_icon("measure_dist"), "Add Scale Bar", self.add_scalebar_item)
-        tb_left.addAction(get_icon("pan"), "Add North Arrow", self.add_north_arrow_item)
-        tb_left.addAction(get_icon("save_project"), "Add Image", self.add_image_item)
+        tb_left.addAction(get_icon("new_project"), "Add Map", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutMap, "map"))
+        tb_left.addAction(get_icon("edit"), "Add Label", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutLabel, "label"))
+        tb_left.addAction(get_icon("layer_properties"), "Add Legend", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutLegend, "legend"))
+        tb_left.addAction(get_icon("measure_dist"), "Add Scale Bar", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutScaleBar, "scalebar"))
+        tb_left.addAction(get_icon("pan"), "Add North Arrow", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutPicture, "north_arrow"))
+        tb_left.addAction(get_icon("save_project"), "Add Image", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutPicture, "image"))
+        tb_left.addAction("Add Table", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutAttributeTable, "table"))
         tb_left.addSeparator()
 
-        tb_left.addAction("Shape", self.add_shape_item)
-        tb_left.addAction("Ellipse", self.add_ellipse_item)
-        tb_left.addAction("Line", self.add_line_item)
-        tb_left.addAction("Polygon", self.add_polygon_item)
-        tb_left.addAction("HTML", self.add_html_item)
-        tb_left.addAction("Table", self.add_table_item)
+        tb_left.addAction("Add Shape", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutShape, "shape"))
+        tb_left.addAction("Add Line", lambda: self._activate_add_node_tool(QgsLayoutItemRegistry.LayoutPolyline, "line"))
+        tb_left.addAction("Add Rectangle", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutShape, "rectangle"))
+        tb_left.addAction("Add Ellipse", lambda: self._activate_add_item_tool(QgsLayoutItemRegistry.LayoutShape, "ellipse"))
+        tb_left.addAction("Add Arrow", lambda: self._activate_add_node_tool(QgsLayoutItemRegistry.LayoutPolyline, "arrow"))
 
-    # ── Item Creation Methods ───────────────────────────────────
+    # ── Tool Mode Switchers ─────────────────────────────────────
+    def set_tool_select(self):
+        self.view.setTool(self.tool_select)
+        self.lbl_status_tool.setText("Tool: Select")
+
+    def set_tool_pan(self):
+        self.view.setTool(self.tool_pan)
+        self.lbl_status_tool.setText("Tool: Pan View")
+
+    def set_tool_move_content(self):
+        self.view.setTool(self.tool_move_content)
+        self.lbl_status_tool.setText("Tool: Move Item Content (Pan inside map frame)")
+
+    # ── Direct Placement Methods (fallback / program placement) ─
     def add_map_item(self):
         page = self.layout.pageCollection().pages()[0]
         pw = page.pageSize().width()
@@ -585,6 +1024,9 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
         item = QgsLayoutItemPicture(self.layout)
         item.setId("North Arrow")
         item.setLinkedMap(self.get_main_map_item())
+        svg = self._find_north_arrow_svg()
+        if svg:
+            item.setPicturePath(svg)
         item.attemptResize(QgsLayoutSize(15, 18, QgsUnitTypes.LayoutMillimeters))
         item.attemptMove(QgsLayoutPoint(180, 20, QgsUnitTypes.LayoutMillimeters))
         item.setBackgroundEnabled(True)
@@ -628,8 +1070,6 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
         self.items_dock.refresh_items()
 
     def add_line_item(self):
-        from PyQt5.QtGui import QPolygonF
-        from PyQt5.QtCore import QPointF
         poly = QPolygonF([QPointF(20, 20), QPointF(80, 20)])
         item = QgsLayoutItemPolyline(poly, self.layout)
         item.setId("Line")
@@ -637,9 +1077,16 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
         self.layout.setSelectedItem(item)
         self.items_dock.refresh_items()
 
+    def add_arrow_item(self):
+        poly = QPolygonF([QPointF(20, 20), QPointF(80, 20)])
+        item = QgsLayoutItemPolyline(poly, self.layout)
+        item.setId("Arrow")
+        item.setEndMarker(QgsLayoutItemPolyline.ArrowHead)
+        self.layout.addLayoutItem(item)
+        self.layout.setSelectedItem(item)
+        self.items_dock.refresh_items()
+
     def add_polygon_item(self):
-        from PyQt5.QtGui import QPolygonF
-        from PyQt5.QtCore import QPointF
         poly = QPolygonF([QPointF(30, 30), QPointF(70, 30), QPointF(50, 60)])
         item = QgsLayoutItemPolygon(poly, self.layout)
         item.setId("Polygon")
@@ -660,7 +1107,6 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
 
     def add_table_item(self):
         try:
-            from qgis.core import QgsLayoutItemAttributeTable
             item = QgsLayoutItemAttributeTable(self.layout)
             item.setId("Attribute Table")
             main_canvas = getattr(self.mw, "map_canvas", None)
@@ -671,7 +1117,7 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
             self.layout.addLayoutItem(item)
             self.layout.setSelectedItem(item)
             self.items_dock.refresh_items()
-        except Exception as e:
+        except Exception:
             self.add_label_item()
 
     def get_main_map_item(self):
@@ -751,8 +1197,11 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
 
     # ── View Controls ───────────────────────────────────────────
     def zoom_to_page(self):
-        page = self.layout.pageCollection().pages()[0]
-        self.view.fitInView(page.rect(), Qt.KeepAspectRatio)
+        if not self.layout:
+            return
+        pages = self.layout.pageCollection().pages()
+        if pages:
+            self.view.fitInView(pages[0].rect(), Qt.KeepAspectRatio)
 
     def zoom_1_1(self):
         self.view.resetTransform()
@@ -789,7 +1238,7 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
         self.new_layout()
 
     def save_layout(self):
-        if self.mw:
+        if self.mw and hasattr(self.mw, "save_project"):
             self.mw.save_project()
         QMessageBox.information(self, "Layout Saved", f"Layout '{self.layout.name()}' saved in project.")
 
@@ -801,23 +1250,29 @@ class GeoStudioLayoutDesignerWindow(QMainWindow):
             QMessageBox.information(self, "Duplicated", f"Layout duplicated as '{new_name}'.")
 
     def show_page_properties(self):
-        page = self.layout.pageCollection().pages()[0]
-        self.props_dock.set_item(page)
+        pages = self.layout.pageCollection().pages()
+        if pages:
+            self.props_dock.set_item(pages[0])
+            self.tab_lower.setCurrentIndex(1)
+
+    def open_export_dialog(self):
+        """Opens GeoStudio's existing PrintExportDialog connected to this layout."""
+        try:
+            from ui.print_export_dialog import PrintExportDialog
+            dlg = PrintExportDialog(self.mw, self, layout=self.layout)
+            dlg.exec_()
+        except Exception:
+            # Fallback to LayoutExportDialog
+            self.export_pdf()
 
     def export_pdf(self):
-        dlg = LayoutExportDialog(self.layout, self)
-        dlg.combo_format.setCurrentIndex(0)
-        dlg.exec_()
+        self.open_export_dialog()
 
     def export_image(self):
-        dlg = LayoutExportDialog(self.layout, self)
-        dlg.combo_format.setCurrentIndex(1)
-        dlg.exec_()
+        self.open_export_dialog()
 
     def export_svg(self):
-        dlg = LayoutExportDialog(self.layout, self)
-        dlg.combo_format.setCurrentIndex(4)  # SVG
-        dlg.exec_()
+        self.open_export_dialog()
 
     def print_layout(self):
         printer = QPrinter(QPrinter.HighResolution)

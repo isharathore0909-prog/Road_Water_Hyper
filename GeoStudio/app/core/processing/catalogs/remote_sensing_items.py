@@ -109,6 +109,24 @@ SPECTRAL_INDICES_ITEMS = [
         "spectral_index",
         supports_gpu=True,
     ),
+    AlgorithmDefinition(
+        "Band Math & Spectral Calculator",
+        "satellite:bandmath",
+        "Landsat & Remote Sensing",
+        "Spectral Indices Studio",
+        "Calculate custom raster algebra and spectral band formulas using mathematical expressions.",
+        "satellite_bandmath",
+        supports_gpu=True,
+    ),
+    AlgorithmDefinition(
+        "Build Virtual Band Stack / Layer Stack",
+        "satellite:bandstack",
+        "Landsat & Remote Sensing",
+        "Spectral Indices Studio",
+        "Stack individual single-band rasters into a combined multi-band virtual raster layer.",
+        "sat_composite",
+        supports_gpu=True,
+    ),
 ]
 
 ENHANCEMENT_ITEMS = [

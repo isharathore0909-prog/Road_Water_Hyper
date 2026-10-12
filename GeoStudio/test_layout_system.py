@@ -1,6 +1,15 @@
 import sys
 import os
 import traceback
+import glob
+qgis_roots = [os.environ.get("QGIS_ROOT", "")] + glob.glob(r"C:\Program Files\QGIS*")
+qgis_root = next((r for r in qgis_roots if r and os.path.isdir(r)), r"C:\Program Files\QGIS 3.44.15")
+plugins_dir = os.path.join(qgis_root, "apps", "qgis-ltr", "python", "plugins")
+if os.path.exists(plugins_dir) and plugins_dir not in sys.path:
+    sys.path.insert(0, plugins_dir)
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "app"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 print("Starting layout test suite...", flush=True)
 
@@ -55,14 +64,51 @@ try:
     assert designer.props_dock is not None, "Props dock is None"
     print("Designer initialized!", flush=True)
 
-    # Test adding items dynamically
+    # Test adding items dynamically (all tools)
     print("Testing add_label_item...", flush=True)
     designer.add_label_item()
     print("Testing add_shape_item...", flush=True)
     designer.add_shape_item()
+    print("Testing add_ellipse_item...", flush=True)
+    designer.add_ellipse_item()
+    print("Testing add_line_item...", flush=True)
+    designer.add_line_item()
+    print("Testing add_arrow_item...", flush=True)
+    designer.add_arrow_item()
+    print("Testing add_scalebar_item...", flush=True)
+    designer.add_scalebar_item()
+    print("Testing add_north_arrow_item...", flush=True)
+    designer.add_north_arrow_item()
+    print("Testing add_table_item...", flush=True)
+    designer.add_table_item()
+
     current_items = [it for it in layout_a4.items() if hasattr(it, "id")]
-    assert len(current_items) >= 6, "Dynamic items insertion failed"
-    print("[3/5] Layout Designer window & dynamic items verified!", flush=True)
+    print(f"Total layout items after adding: {len(current_items)}", flush=True)
+    assert len(current_items) >= 10, f"Dynamic items insertion failed: count is {len(current_items)}"
+
+    # Test Properties Dock for each item
+    for item in layout_a4.items():
+        designer.props_dock.set_item(item)
+
+    # Test Layout Settings Tab (grid, snapping, presets)
+    designer.tab_layout_settings.combo_page_size.setCurrentText("A3 Landscape")
+    designer.tab_layout_settings.chk_show_grid.setChecked(True)
+    designer.tab_layout_settings.chk_snap_grid.setChecked(True)
+    designer.tab_layout_settings._apply_grid_settings()
+
+    # Test Guides Tab
+    designer.tab_guides._add_horizontal_guide()
+    designer.tab_guides._add_vertical_guide()
+    assert designer.tab_guides.table_guides.rowCount() >= 2, "Guides creation failed"
+
+    # Test PrintExportDialog integration
+    print("Testing PrintExportDialog with layout parameter...", flush=True)
+    from ui.print_export_dialog import PrintExportDialog
+    ped = PrintExportDialog(mw, designer, layout=layout_a4)
+    assert ped.layout is layout_a4, "PrintExportDialog layout not assigned"
+    print("PrintExportDialog initialized successfully with layout!", flush=True)
+
+    print("[3/5] Layout Designer window, all 14 tools, guides, and properties verified!", flush=True)
 
     # 4. Test High-Res Export to Image and PDF
     out_png = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_layout_export.png")

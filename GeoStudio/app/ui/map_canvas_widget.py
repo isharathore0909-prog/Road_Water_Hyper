@@ -6,7 +6,7 @@ Provides real-time coordinates and elevation sampling.
 Features an off-white background (#f8f9fa) and on-canvas elevation legend like Global Mapper.
 """
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QToolButton
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor
 
@@ -14,55 +14,6 @@ from core.elevation_styler import ElevationStyler
 from ui.elevation_legend_widget import ElevationLegendWidget
 from ui.map_canvas_navigation import CanvasNavigationManager
 from ui.map_canvas_layers import CanvasLayerCoordinator
-
-
-class MapFloatingNavWidget(QWidget):
-    """Small unobtrusive floating map navigation controls inside the map canvas."""
-
-    def __init__(self, map_canvas_widget, parent=None):
-        super().__init__(parent)
-        self.mcw = map_canvas_widget
-        self.setFixedWidth(34)
-        v = QVBoxLayout(self)
-        v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(3)
-
-        btn_in = QToolButton(self)
-        btn_in.setText("+")
-        btn_in.setToolTip("Zoom In")
-        btn_in.clicked.connect(self.mcw.zoom_in)
-
-        btn_out = QToolButton(self)
-        btn_out.setText("−")
-        btn_out.setToolTip("Zoom Out")
-        btn_out.clicked.connect(self.mcw.zoom_out)
-
-        btn_full = QToolButton(self)
-        btn_full.setText("⌂")
-        btn_full.setToolTip("Full Extent")
-        btn_full.clicked.connect(self.mcw.zoom_full)
-
-        for b in [btn_in, btn_out, btn_full]:
-            b.setFixedSize(30, 30)
-            b.setStyleSheet("""
-                QToolButton {
-                    background: rgba(255, 255, 255, 0.95);
-                    color: #0f172a;
-                    border: 1px solid #cbd5e1;
-                    border-radius: 4px;
-                    font-size: 14px;
-                    font-weight: bold;
-                }
-                QToolButton:hover {
-                    background: #ffffff;
-                    border-color: #0f172a;
-                }
-                QToolButton:pressed {
-                    background: #e2e8f0;
-                }
-            """)
-            v.addWidget(b)
-        self.setStyleSheet("background: transparent;")
 
 
 class MapCanvasWidget(QWidget):
@@ -85,7 +36,6 @@ class MapCanvasWidget(QWidget):
         self._zoom_in_tool = None
         self._zoom_out_tool = None
         self._in_layers_added = False
-        self.setAcceptDrops(True)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -98,11 +48,11 @@ class MapCanvasWidget(QWidget):
             # Global QGIS rendering thread pool and caching configuration
             try:
                 qsettings = QgsSettings()
-                qsettings.setValue("qgis/parallel_rendering", True)
+                qsettings.setValue("qgis/parallel_rendering", False)
                 qsettings.setValue("qgis/preview_jobs", False)
                 qsettings.setValue("qgis/map_update_interval", 50)
                 qsettings.setValue("qgis/enable_render_caching", True)
-                qsettings.setValue("qgis/max_threads", 8)
+                qsettings.setValue("qgis/max_threads", 1)
             except Exception:
                 pass
 
@@ -118,7 +68,7 @@ class MapCanvasWidget(QWidget):
                     dpi = screen.logicalDotsPerInch()
                     self.canvas.mapSettings().setOutputDpi(dpi)
                 self.canvas.mapSettings().setFlag(QgsMapSettings.Antialiasing, False)
-                self.canvas.setParallelRenderingEnabled(True)
+                self.canvas.setParallelRenderingEnabled(False)
                 self.canvas.setCachingEnabled(True)
                 self.canvas.setPreviewJobsEnabled(False)
                 self.canvas.setMapUpdateInterval(50)  # Responsive 50ms progressive refresh
@@ -136,15 +86,14 @@ class MapCanvasWidget(QWidget):
             else:
                 self.canvas.setDestinationCrs(proj.crs())
 
-            self.bridge = QgsLayerTreeMapCanvasBridge(proj.layerTreeRoot(), self.canvas)
+            self.bridge = QgsLayerTreeMapCanvasBridge(proj.layerTreeRoot(), self.canvas, self)
             layout.addWidget(self.canvas)
             self._setup_tools()
 
-            self.elevation_legend = ElevationLegendWidget(self.canvas)
+            # Attach legend overlay to viewport of QGraphicsView canvas
+            overlay_parent = self.canvas.viewport() if hasattr(self.canvas, "viewport") and self.canvas.viewport() else self.canvas
+            self.elevation_legend = ElevationLegendWidget(overlay_parent)
             self.elevation_legend.move(14, 14)
-
-            self.floating_nav = MapFloatingNavWidget(self, self.canvas)
-            self.floating_nav.show()
 
             self.nav_mgr = CanvasNavigationManager(self.canvas)
             self.canvas.extentsChanged.connect(self.nav_mgr.on_extents_changed)
@@ -363,24 +312,4 @@ class MapCanvasWidget(QWidget):
 
         self.canvas.mapCanvasRefreshed.connect(_on_done)
         QTimer.singleShot(timeout_ms, _on_done)
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dropEvent(self, event):
-        p = self.parent()
-        while p:
-            if hasattr(p, "dropEvent") and hasattr(p, "layer_panel"):
-                p.dropEvent(event)
-                return
-            p = p.parent()
-        event.acceptProposedAction()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if hasattr(self, "floating_nav") and self.floating_nav and self.canvas:
-            self.floating_nav.move(self.canvas.width() - 44, 14)
 

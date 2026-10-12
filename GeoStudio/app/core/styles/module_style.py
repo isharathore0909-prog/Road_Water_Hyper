@@ -53,23 +53,23 @@ MODULE_STYLE = f"""
         color: #ffffff;
     }}
     QPushButton#blueBtn:hover {{ background: #1e293b; }}
-    QPushButton#grayBtn, QPushButton#toolBtn, QPushButton#secondaryBtn {{
-        background: #ffffff;
+    QPushButton#grayBtn, QPushButton#toolBtn, QPushButton#secondaryBtn, QPushButton[text="Browse..."], QPushButton#browseBtn {{
+        background: #f8fafc;
         color: #334155;
         border: 1px solid #cbd5e1;
         border-radius: 5px;
-        padding: 6px 14px;
+        padding: 4px 14px;
         font-weight: 500;
         font-size: 11px;
-        min-height: 18px;
+        min-height: 22px;
     }}
-    QPushButton#grayBtn:hover, QPushButton#toolBtn:hover, QPushButton#secondaryBtn:hover {{
-        background: #f1f5f9;
+    QPushButton#grayBtn:hover, QPushButton#toolBtn:hover, QPushButton#secondaryBtn:hover, QPushButton[text="Browse..."]:hover, QPushButton#browseBtn:hover {{
+        background: #e2e8f0;
         color: #0f172a;
         border-color: #94a3b8;
     }}
-    QPushButton#grayBtn:pressed, QPushButton#toolBtn:pressed, QPushButton#secondaryBtn:pressed {{
-        background: #e2e8f0;
+    QPushButton#grayBtn:pressed, QPushButton#toolBtn:pressed, QPushButton#secondaryBtn:pressed, QPushButton[text="Browse..."]:pressed, QPushButton#browseBtn:pressed {{
+        background: #cbd5e1;
     }}
     QPushButton:checked {{
         background: #e2e8f0;
@@ -81,18 +81,19 @@ MODULE_STYLE = f"""
         color: #0f172a;
         border: 1px solid #cbd5e1;
         border-radius: 5px;
-        padding: 5px 8px;
+        padding: 4px 8px;
         font-size: 12px;
+        min-height: 28px;
         selection-background-color: #cbd5e1;
         selection-color: #0f172a;
     }}
     QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{
-        border: 1.5px solid #0f172a;
+        border: 1.5px solid #2563eb;
         background: #ffffff;
     }}
     QComboBox::drop-down {{
         border: none;
-        width: 20px;
+        width: 24px;
     }}
     QComboBox QAbstractItemView {{
         background: #ffffff;
@@ -104,8 +105,9 @@ MODULE_STYLE = f"""
         padding: 2px;
     }}
     QLabel {{
-        color: #475569;
+        color: #334155;
         font-size: 12px;
+        font-weight: 500;
     }}
     QProgressBar {{
         border: 1px solid #e2e8f0;
@@ -118,7 +120,7 @@ MODULE_STYLE = f"""
         min-height: 18px;
     }}
     QProgressBar::chunk {{
-        background: #0f172a;
+        background: #2563eb;
         border-radius: 3px;
     }}
     QListWidget, QTreeWidget, QTableWidget, QTreeView, QTableView {{
@@ -153,13 +155,14 @@ MODULE_STYLE = f"""
         background: #f8fafc;
     }}
     QCheckBox, QRadioButton {{
-        color: #334155;
+        color: #1e293b;
         font-size: 12px;
-        spacing: 6px;
+        spacing: 8px;
+        font-weight: 500;
     }}
     QCheckBox::indicator, QRadioButton::indicator {{
-        width: 15px;
-        height: 15px;
+        width: 16px;
+        height: 16px;
         border: 1px solid #94a3b8;
         border-radius: 3px;
         background: #ffffff;
@@ -168,40 +171,43 @@ MODULE_STYLE = f"""
         border-radius: 8px;
     }}
     QCheckBox::indicator:hover, QRadioButton::indicator:hover {{
-        border-color: #0f172a;
+        border-color: #2563eb;
     }}
-    QCheckBox::indicator:checked, QRadioButton::indicator:checked {{
-        background: #0f172a;
-        border: 1px solid #000000;
+    QCheckBox::indicator:checked {{
+        background-color: #2563eb;
+        border: 1px solid #1d4ed8;
+        image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'></polyline></svg>");
+    }}
+    QRadioButton::indicator:checked {{
+        background-color: #2563eb;
+        border: 3px solid #ffffff;
+        outline: 1.5px solid #2563eb;
     }}
     QTabWidget::pane {{
         border: 1px solid #e2e8f0;
         background: #ffffff;
         border-radius: 6px;
-        top: -1px;
     }}
     QTabWidget::tab-bar {{
-        left: 6px;
+        left: 8px;
     }}
     QTabBar::tab {{
         background: #f1f5f9;
         color: #64748b;
-        padding: 7px 18px;
+        padding: 8px 22px;
         font-size: 12px;
-        font-weight: 500;
+        font-weight: 600;
         border: 1px solid #e2e8f0;
-        border-top-left-radius: 5px;
-        border-top-right-radius: 5px;
+        border-bottom: none;
+        border-top-left-radius: 6px;
+        border-top-right-radius: 6px;
         margin-right: 4px;
-        margin-top: 2px;
         min-width: 68px;
     }}
     QTabBar::tab:selected {{
         background: #ffffff;
         color: #0f172a;
-        font-weight: 700;
-        border-bottom: 1px solid #ffffff;
-        margin-top: 0px;
+        border-bottom: 2px solid #2563eb;
     }}
     QTabBar::tab:hover:!selected {{
         background: #e2e8f0;

@@ -236,9 +236,131 @@ class PointCloudReader:
         )
 
     @staticmethod
+    def load_vector_3d_points(file_path: str, max_points: int = 8000000):
+        """
+        Extracts 3D geometries and surfaces from any GIS Vector dataset (GPKG, SHP, GeoJSON, KML):
+        Supports 3D polygons (planar roof facets, building footprints), 3D lines, and 3D points.
+        """
+        from osgeo import ogr
+        ds = ogr.Open(file_path, 0)
+        if not ds:
+            raise ValueError(f"Could not open vector dataset: {file_path}")
+
+        lyr = ds.GetLayer(0)
+        pts_list = []
+        rgb_list = []
+        feat_count = lyr.GetFeatureCount()
+        max_sample_pts = min(max_points, 500000)
+
+        for feat in lyr:
+            geom = feat.GetGeometryRef()
+            if not geom:
+                continue
+
+            # Attribute-based elevation fallback
+            elev = 0.0
+            for elev_fld in ("Elevation_m", "Height_m", "Apex_Z_m", "Base_Z_m", "Z", "ELEV", "HEIGHT"):
+                if feat.GetFieldIndex(elev_fld) >= 0 and feat.GetField(elev_fld) is not None:
+                    try:
+                        elev = float(feat.GetField(elev_fld))
+                        break
+                    except Exception:
+                        pass
+
+            pitch_deg = float(feat.GetField("Pitch_deg") or 0.0) if feat.GetFieldIndex("Pitch_deg") >= 0 else 0.0
+            az_deg = float(feat.GetField("Azimuth_deg") or 0.0) if feat.GetFieldIndex("Azimuth_deg") >= 0 else 0.0
+            pitch = math.radians(pitch_deg)
+            az = math.radians(az_deg)
+
+            rating = feat.GetField("Solar_Rating") if feat.GetFieldIndex("Solar_Rating") >= 0 else None
+            if rating == "OPTIMAL":
+                col = [0.1, 0.85, 0.25]
+            elif rating == "GOOD":
+                col = [0.95, 0.8, 0.1]
+            elif rating == "FAIR":
+                col = [0.95, 0.5, 0.1]
+            elif rating == "POOR":
+                col = [0.85, 0.2, 0.2]
+            else:
+                col = [0.2, 0.6, 0.95]
+
+            g_name = geom.GetGeometryName().upper()
+
+            # 1. Polygon / MultiPolygon (e.g. planar roof facets, buildings)
+            if "POLYGON" in g_name:
+                polys = [geom] if g_name == "POLYGON" else [geom.GetGeometryRef(i) for i in range(geom.GetGeometryCount())]
+                for p_geom in polys:
+                    env = p_geom.GetEnvelope()
+                    cx = (env[0] + env[1]) / 2.0
+                    cy = (env[2] + env[3]) / 2.0
+                    slope_x = -math.sin(az) * math.tan(pitch)
+                    slope_y = -math.cos(az) * math.tan(pitch)
+
+                    # Boundary ring points
+                    for r_idx in range(p_geom.GetGeometryCount()):
+                        ring = p_geom.GetGeometryRef(r_idx)
+                        for i in range(ring.GetPointCount()):
+                            p = ring.GetPoint(i)
+                            pz = p[2] if len(p) > 2 and abs(p[2]) > 1e-4 else (elev + (p[0] - cx) * slope_x + (p[1] - cy) * slope_y)
+                            pts_list.append((p[0], p[1], pz))
+                            rgb_list.append([0.15, 0.2, 0.25])
+
+                    # Surface interior points
+                    dx = max(0.1, env[1] - env[0])
+                    dy = max(0.1, env[3] - env[2])
+                    step = max(0.4, min(dx, dy) / 25.0)
+
+                    xs = np.arange(env[0], env[1], step)
+                    ys = np.arange(env[2], env[3], step)
+                    if len(xs) * len(ys) <= 4000:
+                        gx, gy = np.meshgrid(xs, ys)
+
+                        for x_val, y_val in zip(gx.flatten(), gy.flatten()):
+                            pt = ogr.Geometry(ogr.wkbPoint)
+                            pt.AddPoint_2D(x_val, y_val)
+                            if p_geom.Contains(pt):
+                                z_val = elev + (x_val - cx) * slope_x + (y_val - cy) * slope_y
+                                pts_list.append((x_val, y_val, z_val))
+                                rgb_list.append(col)
+
+            # 2. LineString (e.g. 3D powerlines, contours)
+            elif "LINESTRING" in g_name:
+                pts = geom.GetPoints()
+                if pts:
+                    for idx in range(len(pts) - 1):
+                        p1 = np.array(pts[idx], dtype=np.float64)
+                        p2 = np.array(pts[idx + 1], dtype=np.float64)
+                        seg_dist = float(np.linalg.norm(p2[:2] - p1[:2]))
+                        num_steps = max(2, int(seg_dist / 1.0))
+                        for step_frac in np.linspace(0.0, 1.0, num_steps, endpoint=(idx == len(pts) - 2)):
+                            interp_pt = p1 + step_frac * (p2 - p1)
+                            z_val = float(interp_pt[2]) if len(interp_pt) > 2 and abs(interp_pt[2]) > 1e-4 else elev
+                            pts_list.append((interp_pt[0], interp_pt[1], z_val))
+                            rgb_list.append([0.9, 0.7, 0.1])
+
+            # 3. Point / MultiPoint (e.g. towers, trees)
+            elif "POINT" in g_name:
+                pz = geom.GetZ() if geom.GetCoordinateDimension() == 3 and abs(geom.GetZ()) > 1e-4 else elev
+                pts_list.append((geom.GetX(), geom.GetY(), pz))
+                rgb_list.append(col)
+
+            if len(pts_list) >= max_sample_pts:
+                break
+
+        if not pts_list:
+            raise ValueError(f"No 3D geometries or coordinates could be extracted from: {file_path}")
+
+        pts_arr = np.array(pts_list, dtype=np.float64)
+        rgb_arr = np.array(rgb_list, dtype=np.float32) if len(rgb_list) == len(pts_arr) else None
+        return PointCloudReader._process_coordinates(
+            pts_arr[:, 0], pts_arr[:, 1], pts_arr[:, 2],
+            rgb_arr, None, None, len(pts_arr)
+        )
+
+    @staticmethod
     def load_las_points(file_path: str, max_points: int = 8000000):
         """
-        Extracts 3D points from ANY LAS, LAZ, COPC, DEM, XYZ, PTS, CSV file:
+        Extracts 3D points from ANY LAS, LAZ, COPC, DEM, GPKG, SHP, XYZ, PTS, CSV file:
         Returns: (xyz_centered, rgb_colors, z_colors, class_colors,
                   intensity_colors, center_orig, z_min, z_max, total_points, color_dict)
         """
@@ -259,6 +381,23 @@ class PointCloudReader:
         if ext in [".xyz", ".pts", ".csv", ".txt", ".ply"]:
             return PointCloudReader.load_ascii_ply_points(file_path, max_points)
 
+        if ext in [".gpkg", ".shp", ".geojson", ".json", ".kml"]:
+            try:
+                return PointCloudReader.load_vector_3d_points(file_path, max_points)
+            except Exception as e:
+                # Fallback to parent point cloud if vector 3D extraction fails
+                base_cand = file_path
+                for sfx in ["_roof_facets", "_conductors", "_towers", "_danger_trees", "_clearance"]:
+                    if sfx in base_cand:
+                        base_cand = base_cand.replace(sfx, "")
+                        break
+                base_stem, _ = os.path.splitext(base_cand)
+                for cand_ext in [".copc.laz", ".laz", ".las"]:
+                    cand_file = base_stem + cand_ext
+                    if os.path.exists(cand_file):
+                        return PointCloudReader.load_las_points(cand_file, max_points)
+                raise e
+
         if file_path.endswith("_surface.tif"):
             for cand_ext in [".las", ".laz", ".copc.laz", ".e57"]:
                 cand = file_path.replace("_surface.tif", cand_ext)
@@ -273,3 +412,4 @@ class PointCloudReader:
         return PointCloudReader._process_coordinates(
             x, y, z, rgb_colors, class_colors, intensity_colors, total_points, extra_attrs
         )
+

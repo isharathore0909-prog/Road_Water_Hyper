@@ -10,7 +10,6 @@ from .digitize_tool import GeoDigitizeTool
 from .measure_tool import GeoMeasureTool
 from .coord_tool import GeoCoordCaptureTool
 from .profile_line_tool import GeoProfileLineTool
-from .identify_tool import GeoIdentifyTool
 
 __all__ = [
     "GeoSelectTool",
@@ -18,5 +17,4 @@ __all__ = [
     "GeoMeasureTool",
     "GeoCoordCaptureTool",
     "GeoProfileLineTool",
-    "GeoIdentifyTool",
 ]

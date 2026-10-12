@@ -28,14 +28,20 @@ from app.ui.print_export_overlays import (
 class PrintExportDialog(QDialog):
     """High-resolution map export and print dialog."""
 
-    def __init__(self, main_window, parent=None):
+    def __init__(self, main_window, parent=None, layout=None):
         super().__init__(parent or main_window)
         self.mw = main_window
-        self.setWindowTitle("Print & Export Map Layout")
+        self.layout = layout
+        title = f"Print & Export Map Layout — {layout.name()}" if layout else "Print & Export Map Layout"
+        self.setWindowTitle(title)
         self.resize(560, 480)
         self.setMinimumWidth(480)
 
         self._init_ui()
+        if self.layout:
+            self.grp_decor.hide()
+            self.combo_format.addItem("SVG Vector Graphics (*.svg)")
+            self.combo_format.addItem("TIFF Image (*.tif)")
         self._update_dimensions_info()
 
     def _init_ui(self):
@@ -77,8 +83,8 @@ class PrintExportDialog(QDialog):
         layout.addWidget(grp_output)
 
         # Map Elements & Overlays
-        grp_decor = QGroupBox("Map Elements & Overlays")
-        form_decor = QFormLayout(grp_decor)
+        self.grp_decor = QGroupBox("Map Elements & Overlays")
+        form_decor = QFormLayout(self.grp_decor)
         form_decor.setSpacing(8)
 
         self.chk_title = QCheckBox("Include Map Title")
@@ -99,14 +105,12 @@ class PrintExportDialog(QDialog):
         self.chk_border.setChecked(True)
         form_decor.addRow(self.chk_border)
 
-        layout.addWidget(grp_decor)
+        layout.addWidget(self.grp_decor)
 
         self.progress = QProgressBar()
         self.progress.setTextVisible(False)
         self.progress.hide()
         layout.addWidget(self.progress)
-
-        self.setWindowModality(Qt.ApplicationModal)
 
         # Buttons
         btn_box = QHBoxLayout()
@@ -115,48 +119,14 @@ class PrintExportDialog(QDialog):
         btn_cancel = QPushButton("Cancel")
         btn_cancel.clicked.connect(self.reject)
         btn_box.addWidget(btn_cancel)
-
-        btn_designer = QPushButton("Open in Layout Designer...")
-        btn_designer.setStyleSheet("background: #f8fafc; color: #0f172a; border: 1px solid #cbd5e1; font-weight: 600; padding: 7px 14px; border-radius: 4px;")
-        btn_designer.clicked.connect(self._open_in_designer)
-        btn_box.addWidget(btn_designer)
-
         btn_box.addStretch()
 
-        btn_export = QPushButton("Export & Save Map")
+        btn_export = QPushButton("🚀 Export & Save Map")
         btn_export.setStyleSheet("background: #0284c7; color: white; font-weight: bold; padding: 7px 16px; border-radius: 4px;")
         btn_export.clicked.connect(self._do_export)
         btn_box.addWidget(btn_export)
 
         layout.addLayout(btn_box)
-
-    def _open_in_designer(self):
-        from ui.layout.layout_templates import create_layout_from_template
-        from ui.layout.layout_designer_window import GeoStudioLayoutDesignerWindow
-
-        proj = QgsProject.instance()
-        mgr = proj.layoutManager()
-        name = "Map Layout"
-        base_name = name
-        counter = 1
-        while mgr.layoutByName(name):
-            name = f"{base_name} ({counter})"
-            counter += 1
-
-        preset = self.combo_preset.currentText()
-        template = "A4 Landscape"
-        if "Portrait" in preset:
-            template = "A4 Portrait"
-        elif "A3" in preset:
-            template = "A3 Landscape"
-
-        layout = create_layout_from_template(proj, name, template, map_canvas=self.mw.map_canvas)
-        mgr.addLayout(layout)
-
-        self.accept()
-        designer = GeoStudioLayoutDesignerWindow(layout, main_window=self.mw, parent=self.mw)
-        designer.show()
-
 
     def _get_dpi(self):
         idx = self.combo_dpi.currentIndex()
@@ -210,59 +180,78 @@ class PrintExportDialog(QDialog):
         QApplication.processEvents()
 
         try:
-            w, h = self._get_target_pixel_size()
             dpi = self._get_dpi()
 
-            canvas = self.mw.map_canvas.canvas
-            dest_crs = canvas.mapSettings().destinationCrs()
-            extent = canvas.extent()
-            layers = [l for l in QgsProject.instance().mapLayers().values() if l.isValid()]
+            if self.layout:
+                from qgis.core import QgsLayoutExporter
+                exporter = QgsLayoutExporter(self.layout)
+                if ext == ".pdf":
+                    pdf_settings = QgsLayoutExporter.PdfExportSettings()
+                    pdf_settings.dpi = dpi
+                    res = exporter.exportToPdf(path, pdf_settings)
+                elif ext == ".svg":
+                    svg_settings = QgsLayoutExporter.SvgExportSettings()
+                    svg_settings.dpi = dpi
+                    res = exporter.exportToSvg(path, svg_settings)
+                else:
+                    img_settings = QgsLayoutExporter.ImageExportSettings()
+                    img_settings.dpi = dpi
+                    res = exporter.exportToImage(path, img_settings)
 
-            settings = QgsMapSettings()
-            settings.setLayers(layers)
-            settings.setDestinationCrs(dest_crs)
-            settings.setExtent(extent)
-            settings.setOutputSize(QSize(w, h))
-            settings.setOutputDpi(dpi)
-            settings.setBackgroundColor(QColor("#ffffff"))
-
-            image = QImage(QSize(w, h), QImage.Format_ARGB32_Premultiplied)
-            image.fill(QColor("#ffffff"))
-
-            p = QPainter(image)
-            p.setRenderHint(QPainter.Antialiasing)
-
-            job = QgsMapRendererCustomPainterJob(settings, p)
-            job.start()
-            job.waitForFinished()
-
-            if self.chk_title.isChecked() and self.txt_title.text().strip():
-                draw_title_overlay(p, w, h, self.txt_title.text().strip())
-
-            if self.chk_north_arrow.isChecked():
-                draw_north_arrow_overlay(p, w, h)
-
-            if self.chk_scalebar.isChecked():
-                draw_scalebar_overlay(p, w, h, extent, dest_crs)
-
-            if self.chk_border.isChecked():
-                p.setPen(QPen(QColor("#0f172a"), max(2, int(w / 1000))))
-                p.setBrush(Qt.NoBrush)
-                p.drawRect(0, 0, w - 1, h - 1)
-
-            p.end()
-
-            if ext == ".pdf":
-                from PyQt5.QtGui import QPdfWriter
-                from PyQt5.QtCore import QSizeF
-                writer = QPdfWriter(path)
-                writer.setResolution(dpi)
-                writer.setPageSizeMM(QSizeF(w * 25.4 / dpi, h * 25.4 / dpi))
-                pdf_p = QPainter(writer)
-                pdf_p.drawImage(0, 0, image)
-                pdf_p.end()
+                if res != QgsLayoutExporter.Success:
+                    raise RuntimeError(f"Layout export returned status: {res}")
             else:
-                image.save(path)
+                w, h = self._get_target_pixel_size()
+                canvas = self.mw.map_canvas.canvas
+                dest_crs = canvas.mapSettings().destinationCrs()
+                extent = canvas.extent()
+                layers = [l for l in QgsProject.instance().mapLayers().values() if l.isValid()]
+
+                settings = QgsMapSettings()
+                settings.setLayers(layers)
+                settings.setDestinationCrs(dest_crs)
+                settings.setExtent(extent)
+                settings.setOutputSize(QSize(w, h))
+                settings.setOutputDpi(dpi)
+                settings.setBackgroundColor(QColor("#ffffff"))
+
+                image = QImage(QSize(w, h), QImage.Format_ARGB32_Premultiplied)
+                image.fill(QColor("#ffffff"))
+
+                p = QPainter(image)
+                p.setRenderHint(QPainter.Antialiasing)
+
+                job = QgsMapRendererCustomPainterJob(settings, p)
+                job.start()
+                job.waitForFinished()
+
+                if self.chk_title.isChecked() and self.txt_title.text().strip():
+                    draw_title_overlay(p, w, h, self.txt_title.text().strip())
+
+                if self.chk_north_arrow.isChecked():
+                    draw_north_arrow_overlay(p, w, h)
+
+                if self.chk_scalebar.isChecked():
+                    draw_scalebar_overlay(p, w, h, extent, dest_crs)
+
+                if self.chk_border.isChecked():
+                    p.setPen(QPen(QColor("#0f172a"), max(2, int(w / 1000))))
+                    p.setBrush(Qt.NoBrush)
+                    p.drawRect(0, 0, w - 1, h - 1)
+
+                p.end()
+
+                if ext == ".pdf":
+                    from PyQt5.QtGui import QPdfWriter
+                    from PyQt5.QtCore import QSizeF
+                    writer = QPdfWriter(path)
+                    writer.setResolution(dpi)
+                    writer.setPageSizeMM(QSizeF(w * 25.4 / dpi, h * 25.4 / dpi))
+                    pdf_p = QPainter(writer)
+                    pdf_p.drawImage(0, 0, image)
+                    pdf_p.end()
+                else:
+                    image.save(path)
 
             self.progress.hide()
             self.mw.geo_status.showMessage(f"Map successfully exported to {os.path.basename(path)}", 5000)

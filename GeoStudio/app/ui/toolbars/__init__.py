@@ -12,7 +12,6 @@ from .edit_toolbar import EditToolBar
 from .terrain_toolbar import TerrainToolBar
 from .lidar_toolbar import LidarToolBar
 from .digitizing_toolbar import DigitizingToolBar
-from .contextual_toolbar import ContextualToolBar
 
 __all__ = [
     "ProjectToolBar",
@@ -24,5 +23,4 @@ __all__ = [
     "TerrainToolBar",
     "LidarToolBar",
     "DigitizingToolBar",
-    "ContextualToolBar",
 ]

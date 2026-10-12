@@ -11,9 +11,6 @@ from PyQt5.QtCore import Qt
 
 from .map_canvas_widget import MapCanvasWidget
 from .layer_panel import LayerPanelWidget
-from .browser_dock import BrowserDock
-from .identify_dock import IdentifyDock
-from .remote_sensing_dock import RemoteSensingDock
 from .attribute_table_dock import AttributeTableDock
 from .processing_dock import ProcessingDock
 from .python_console_dock import PythonConsoleDock
@@ -21,8 +18,7 @@ from .status_bar import GeoStatusBar
 from .menus.menu_builder import build_main_menus
 from .toolbars import (
     ProjectToolBar, NavToolBar, DataSourcesToolBar, SelectionToolBar,
-    MeasurementToolBar, EditToolBar, TerrainToolBar, LidarToolBar, DigitizingToolBar,
-    ContextualToolBar
+    MeasurementToolBar, EditToolBar, TerrainToolBar, LidarToolBar, DigitizingToolBar
 )
 from core.style import OFFWHITE_STYLESHEET
 from .controllers import (
@@ -50,10 +46,12 @@ class GeoStudioMainWindow(
     APP_NAME = "GeoStudio"
     VERSION = "1.0.0"
 
-    def __init__(self, qgs_app=None, parent=None):
+    def __init__(self, qgs_app=None, safe_mode=False, parent=None):
         super().__init__(parent)
         self.qgs_app = qgs_app
-        self.setWindowTitle(f"{self.APP_NAME} — Standalone GIS")
+        self.safe_mode = safe_mode
+        title_suffix = " [Safe Mode]" if safe_mode else ""
+        self.setWindowTitle(f"{self.APP_NAME} — Standalone GIS{title_suffix}")
         self.setMinimumSize(1280, 800)
         self.resize(1600, 950)
 
@@ -80,14 +78,13 @@ class GeoStudioMainWindow(
         build_main_menus(self)
 
     def _build_toolbars(self):
-        # Row 1: Core GIS Navigation & Operations
+        # Row 1: General GIS Toolbars
         self.tb_file = ProjectToolBar(self)
         self.tb_nav = NavToolBar(self)
         self.tb_data = DataSourcesToolBar(self)
         self.tb_selection = SelectionToolBar(self)
         self.tb_measure = MeasurementToolBar(self)
         self.tb_edit = EditToolBar(self)
-        self.tb_context = ContextualToolBar(self)
 
         self.addToolBar(Qt.TopToolBarArea, self.tb_file)
         self.addToolBar(Qt.TopToolBarArea, self.tb_nav)
@@ -95,7 +92,6 @@ class GeoStudioMainWindow(
         self.addToolBar(Qt.TopToolBarArea, self.tb_selection)
         self.addToolBar(Qt.TopToolBarArea, self.tb_measure)
         self.addToolBar(Qt.TopToolBarArea, self.tb_edit)
-        self.addToolBar(Qt.TopToolBarArea, self.tb_context)
 
         # Row 2: Specialized Terrain, LiDAR & Digitizing Toolbars
         self.addToolBarBreak(Qt.TopToolBarArea)
@@ -108,39 +104,36 @@ class GeoStudioMainWindow(
         self.addToolBar(Qt.TopToolBarArea, self.tb_digitizing)
 
     def _build_docks(self):
-        # LEFT: Single, Clean Layers Panel
-        self.layer_panel = LayerPanelWidget(self.map_canvas, self)
+        # Left: Layers Panel
+        self.layer_panel = LayerPanelWidget(self.map_canvas)
         self.layer_dock = QDockWidget("Layers", self)
         self.layer_dock.setObjectName("layer_dock")
         self.layer_dock.setWidget(self.layer_panel)
         self.layer_dock.setMinimumWidth(240)
-        self.layer_dock.setMaximumWidth(450)
+        self.layer_dock.setMaximumWidth(420)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.layer_dock)
 
-        # Secondary modules (instantiated for API/test compatibility, but completely hidden with NO right sidebar)
-        self.browser_dock = BrowserDock(self, self)
-        self.browser_dock.setObjectName("browser_dock")
-        self.browser_dock.hide()
+        if not self.safe_mode:
+            # Right: Hierarchical Processing Toolbox
+            self.processing_dock = ProcessingDock(self.map_canvas, self)
+            self.processing_dock.setObjectName("processing_dock")
+            self.addDockWidget(Qt.RightDockWidgetArea, self.processing_dock)
+            self.processing_dock.hide()
 
-        self.processing_dock = ProcessingDock(self.map_canvas, self)
-        self.processing_dock.setObjectName("processing_dock")
-        self.processing_dock.hide()
+            # Bottom: Attribute Table & Python Console
+            self.attr_table_dock = AttributeTableDock(self)
+            self.attr_table_dock.setObjectName("attr_table_dock")
+            self.addDockWidget(Qt.BottomDockWidgetArea, self.attr_table_dock)
+            self.attr_table_dock.hide()
 
-        self.identify_dock = IdentifyDock(self, self)
-        self.identify_dock.setObjectName("identify_dock")
-        self.identify_dock.hide()
-
-        self.remote_sensing_dock = RemoteSensingDock(self, self)
-        self.remote_sensing_dock.setObjectName("remote_sensing_dock")
-        self.remote_sensing_dock.hide()
-
-        self.attr_table_dock = AttributeTableDock(self)
-        self.attr_table_dock.setObjectName("attr_table_dock")
-        self.attr_table_dock.hide()
-
-        self.console_dock = PythonConsoleDock(self)
-        self.console_dock.setObjectName("console_dock")
-        self.console_dock.hide()
+            self.console_dock = PythonConsoleDock(self)
+            self.console_dock.setObjectName("console_dock")
+            self.addDockWidget(Qt.BottomDockWidgetArea, self.console_dock)
+            self.console_dock.hide()
+        else:
+            self.processing_dock = None
+            self.attr_table_dock = None
+            self.console_dock = None
 
     def _build_status_bar(self):
         self.geo_status = GeoStatusBar(self.map_canvas, self)
@@ -148,64 +141,32 @@ class GeoStudioMainWindow(
 
     def _connect_signals(self):
         self.layer_panel.active_layer_changed.connect(self._on_active_layer_changed)
-        try:
-            from core.raster_optimizer import get_raster_optimizer
-            get_raster_optimizer().status_message.connect(self.geo_status.showMessage)
-        except Exception:
-            pass
+        if not self.safe_mode:
+            try:
+                from core.raster_optimizer import get_raster_optimizer
+                get_raster_optimizer().status_message.connect(self.geo_status.showMessage)
+            except Exception:
+                pass
 
     def _on_active_layer_changed(self, layer):
         name = layer.name() if layer else "None"
         self.geo_status.set_layer(name)
-        if hasattr(self, "tb_context"):
-            self.tb_context.update_context(layer)
-        if hasattr(self, "attr_table_dock") and self.attr_table_dock.isVisible():
-            self.attr_table_dock.load_active_layer(layer)
-        if layer and hasattr(layer, "selectionChanged"):
-            try:
-                layer.selectionChanged.connect(lambda *args: self._update_selection_count(layer))
-            except Exception:
-                pass
-        self._update_selection_count(layer)
-
-    def _update_selection_count(self, layer):
-        if layer and hasattr(layer, "selectedFeatureCount"):
-            cnt = layer.selectedFeatureCount()
-            self.geo_status.set_selected(cnt)
-        else:
-            self.geo_status.set_selected(0)
-
-    def set_workspace_preset(self, preset: str = "default"):
-        """Configures docks and toolbars to match standard GIS task workflows."""
-        preset = preset.lower()
-        # Always maintain clean two-area workspace: Left Layers Panel + Center Map Canvas
-        self.layer_dock.show()
-        self.browser_dock.hide()
-        self.processing_dock.hide()
-        self.identify_dock.hide()
-        if hasattr(self, "remote_sensing_dock"):
-            self.remote_sensing_dock.hide()
-        self.attr_table_dock.hide()
-        self.console_dock.hide()
-
-        if preset == "editing":
-            if hasattr(self, "tb_digitizing"):
-                self.tb_digitizing.show()
-            if hasattr(self, "tb_edit"):
-                self.tb_edit.show()
-        elif preset == "remotesensing":
-            if hasattr(self, "tb_terrain"):
-                self.tb_terrain.show()
-            if hasattr(self, "tb_lidar"):
-                self.tb_lidar.show()
-
-        if hasattr(self, "geo_status"):
-            self.geo_status.showMessage(f"Applied '{preset.title()}' workspace preset", 3000)
 
     def _update_title(self):
-        self.setWindowTitle(f"{self.APP_NAME} v{self.VERSION} — Standalone GIS")
+        suffix = " [Safe Mode]" if self.safe_mode else ""
+        self.setWindowTitle(f"{self.APP_NAME} v{self.VERSION} — Standalone GIS{suffix}")
 
     def closeEvent(self, event):
+        # 1. Close all active layout designers first so they release layouts cleanly
+        if hasattr(self, "_layout_designers"):
+            for d in list(self._layout_designers):
+                try:
+                    d.close()
+                except Exception:
+                    pass
+            self._layout_designers.clear()
+
+        # 2. Safely clear project after all child layout designers have closed
         try:
             from qgis.core import QgsProject
             QgsProject.instance().clear()

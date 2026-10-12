@@ -93,7 +93,7 @@ def create_layout_from_template(project, name: str, template_type: str = "A4 Lan
     map_item.setFrameStrokeColor(QColor("#475569"))
     map_item.setBackgroundColor(QColor("#ffffff"))
 
-    if map_canvas and map_canvas.canvas:
+    if map_canvas and map_canvas.canvas and not map_canvas.canvas.extent().isEmpty():
         map_item.setExtent(map_canvas.canvas.extent())
         map_item.setCrs(map_canvas.canvas.mapSettings().destinationCrs())
         map_item.setLayers(map_canvas.canvas.layers())
@@ -101,10 +101,16 @@ def create_layout_from_template(project, name: str, template_type: str = "A4 Lan
         valid_layers = [l for l in project.mapLayers().values() if l.isValid()]
         map_item.setLayers(valid_layers)
         if valid_layers:
-            comb_ext = valid_layers[0].extent()
+            from qgis.core import QgsRectangle
+            comb_ext = QgsRectangle(valid_layers[0].extent())
             for l in valid_layers[1:]:
                 comb_ext.combineExtentWith(l.extent())
             map_item.setExtent(comb_ext)
+        else:
+            from qgis.core import QgsRectangle
+            map_item.setExtent(QgsRectangle(-180.0, -90.0, 180.0, 90.0))
+        if project.crs().isValid():
+            map_item.setCrs(project.crs())
 
     layout.addLayoutItem(map_item)
 

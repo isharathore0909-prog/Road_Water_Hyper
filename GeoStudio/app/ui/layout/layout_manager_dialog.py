@@ -216,8 +216,11 @@ class LayoutManagerDialog(QDialog):
             QMessageBox.information(self, "Show Layout", "Please select a layout from the list.")
             return
 
-        self.designer = GeoStudioLayoutDesignerWindow(layout, main_window=self.mw, parent=self.mw)
-        self.designer.show()
+        if hasattr(self.mw, "open_layout_designer"):
+            self.designer = self.mw.open_layout_designer(layout)
+        else:
+            self.designer = GeoStudioLayoutDesignerWindow(layout, main_window=self.mw, parent=self.mw)
+            self.designer.show()
         self.accept()
 
     def _on_duplicate_layout(self):
@@ -306,14 +309,18 @@ class LayoutManagerDialog(QDialog):
                 layout.loadFromTemplate(doc, QgsProject.instance())
             mgr.addLayout(layout)
         else:
-            layout = create_layout_from_template(QgsProject.instance(), name, tpl_name)
+            map_canvas = getattr(self.mw, "map_canvas", None)
+            layout = create_layout_from_template(QgsProject.instance(), name, tpl_name, map_canvas=map_canvas)
             mgr.addLayout(layout)
 
         self._refresh_layout_list()
 
         # Launch designer
-        self.designer = GeoStudioLayoutDesignerWindow(layout, main_window=self.mw, parent=self.mw)
-        self.designer.show()
+        if hasattr(self.mw, "open_layout_designer"):
+            self.designer = self.mw.open_layout_designer(layout)
+        else:
+            self.designer = GeoStudioLayoutDesignerWindow(layout, main_window=self.mw, parent=self.mw)
+            self.designer.show()
         self.accept()
 
     def _on_help(self):

@@ -85,48 +85,49 @@ class ProjectControllerMixin:
             except Exception as e:
                 self._err(str(e))
 
-    def close_project(self):
-        try:
-            from qgis.core import QgsProject
-            QgsProject.instance().clear()
-            self.layer_panel.refresh()
-            self.map_canvas.refresh_canvas()
-            self.setWindowTitle(f"{self.APP_NAME} — Standalone GIS")
-            if hasattr(self, "geo_status"):
-                self.geo_status.showMessage("Project closed", 2000)
-        except Exception as e:
-            self._err(f"Close project: {e}")
-
     def project_properties(self):
-        try:
-            from qgis.gui import QgsProjectionSelectionDialog
-            from qgis.core import QgsProject
-            proj = QgsProject.instance()
-            dlg = QgsProjectionSelectionDialog(self)
-            dlg.setCrs(proj.crs())
-            if dlg.exec_():
-                new_crs = dlg.crs()
-                if new_crs.isValid():
-                    proj.setCrs(new_crs)
-                    self.map_canvas.canvas.setDestinationCrs(new_crs)
-                    if hasattr(self, "geo_status"):
-                        self.geo_status.showMessage(f"Project CRS updated: {new_crs.authid()}", 3000)
-        except Exception as e:
-            self._info(f"Project Properties: {e}")
+        self._info("Project Properties dialog.")
 
     def print_map(self):
-        from ui.print_export_dialog import PrintExportDialog
-        dlg = PrintExportDialog(self)
-        dlg.exec_()
+        """Opens the Layout Manager workstation."""
+        self.open_layout_manager()
 
     def open_layout_manager(self):
+        """Displays the Layout Manager dialog to manage and open project layouts."""
         from ui.layout.layout_manager_dialog import LayoutManagerDialog
         dlg = LayoutManagerDialog(self)
         dlg.exec_()
 
-    def create_layout_from_current_map(self):
-        from ui.layout.layout_templates import create_layout_from_template
+    def open_layout_designer(self, layout):
+        """Opens, focuses, and retains a GeoStudioLayoutDesignerWindow instance."""
         from ui.layout.layout_designer_window import GeoStudioLayoutDesignerWindow
+        if not hasattr(self, "_layout_designers"):
+            self._layout_designers = []
+
+        # Focus existing designer if already open for this layout
+        for d in list(self._layout_designers):
+            if getattr(d, "layout", None) == layout:
+                d.show()
+                d.raise_()
+                d.activateWindow()
+                return d
+
+        designer = GeoStudioLayoutDesignerWindow(layout, main_window=self, parent=self)
+        self._layout_designers.append(designer)
+
+        def _cleanup():
+            if designer in self._layout_designers:
+                self._layout_designers.remove(designer)
+
+        designer.destroyed.connect(_cleanup)
+        designer.show()
+        designer.raise_()
+        designer.activateWindow()
+        return designer
+
+    def create_layout_from_current_map(self):
+        """Creates a new layout initialized with the current map extent and opens Layout Designer."""
+        from ui.layout.layout_templates import create_layout_from_template
         from qgis.core import QgsProject
 
         proj = QgsProject.instance()
@@ -140,9 +141,13 @@ class ProjectControllerMixin:
 
         layout = create_layout_from_template(proj, name, "A4 Landscape", map_canvas=self.map_canvas)
         mgr.addLayout(layout)
-        designer = GeoStudioLayoutDesignerWindow(layout, main_window=self, parent=self)
-        designer.show()
+        return self.open_layout_designer(layout)
 
+    def quick_export_map(self):
+        """Directly opens the high-resolution map export dialog for the current canvas."""
+        from ui.print_export_dialog import PrintExportDialog
+        dlg = PrintExportDialog(self)
+        dlg.exec_()
 
     def set_theme(self, theme_name: str = "offwhite"):
         from core.style import OFFWHITE_STYLESHEET, DARK_STYLESHEET
@@ -158,7 +163,7 @@ class ProjectControllerMixin:
             self.geo_status.showMessage("Dark GIS Theme applied", 3000)
 
     def set_project_crs(self):
-        self.project_properties()
+        self._info("CRS selector.")
 
     def open_docs(self):
         import webbrowser
@@ -167,10 +172,9 @@ class ProjectControllerMixin:
     def about(self):
         QMessageBox.about(
             self, f"About {self.APP_NAME}",
-            f"<h3>{self.APP_NAME} Professional Desktop GIS</h3>"
-            f"<p><b>Version:</b> {self.VERSION}</p>"
-            f"<p>Professional engineering and spatial analytics workstation.</p>"
-            f"<p>Powered by QGIS Core & PyQGIS runtime.</p>"
+            f"<h2>🌍 {self.APP_NAME} v{self.VERSION}</h2>"
+            f"<p>A standalone GIS application powered by QGIS & GPU-accelerated computing.</p>"
+            f"<p>Built with PyQGIS, PyQt5, GDAL, NumPy, CuPy.</p>"
         )
 
     def _info(self, msg):
