@@ -50,6 +50,75 @@ class ElevationStyler:
     apply_flowaccum_colormap = staticmethod(apply_flowaccum_colormap)
     apply_stream_colormap = staticmethod(apply_stream_colormap)
 
+    # ------------------------------------------------------------------
+    # Blend Modes  (ArcGIS: Appearance → Effects → Layer Blend)
+    # ------------------------------------------------------------------
+
+    #: Mapping of human-readable blend mode names → QPainter.CompositionMode_*
+    BLEND_MODES = {
+        "Normal":         "SourceOver",
+        "Multiply":       "Multiply",
+        "Screen":         "Screen",
+        "Overlay":        "Overlay",
+        "Hard Light":     "HardLight",
+        "Soft Light":     "SoftLight",
+        "Darken":         "Darken",
+        "Lighten":        "Lighten",
+        "Color Dodge":    "ColorDodge",
+        "Color Burn":     "ColorBurn",
+        "Linear Dodge":   "Plus",
+        "Difference":     "Difference",
+        "Exclusion":      "Exclusion",
+        "Multiply (Dark Terrain)": "Multiply",
+        "Screen (Light Glow)":     "Screen",
+    }
+
+    @staticmethod
+    def apply_blend_mode(layer, mode_name: str) -> bool:
+        """
+        Applies a compositing blend mode to *layer*.
+
+        Parameters
+        ----------
+        layer     : QgsMapLayer (raster or vector)
+        mode_name : one of ElevationStyler.BLEND_MODES keys, e.g. "Multiply"
+
+        Returns True on success, False on failure.
+
+        ArcGIS equivalent
+        -----------------
+        Select layer → Appearance tab → Effects group → Layer Blend drop-down.
+        """
+        if not layer or not layer.isValid():
+            return False
+        try:
+            from PyQt5.QtGui import QPainter
+            qt_attr = ElevationStyler.BLEND_MODES.get(mode_name, "SourceOver")
+            mode = getattr(QPainter, f"CompositionMode_{qt_attr}",
+                           QPainter.CompositionMode_SourceOver)
+            layer.setBlendMode(mode)
+            layer.triggerRepaint()
+            return True
+        except Exception as e:
+            print(f"[ElevationStyler] apply_blend_mode error: {e}")
+            return False
+
+    @staticmethod
+    def get_layer_blend_mode_name(layer) -> str:
+        """Returns the human-readable name of the current blend mode for *layer*."""
+        if not layer or not layer.isValid():
+            return "Normal"
+        try:
+            from PyQt5.QtGui import QPainter
+            current = layer.blendMode()
+            reverse = {
+                getattr(QPainter, f"CompositionMode_{v}", None): k
+                for k, v in ElevationStyler.BLEND_MODES.items()
+            }
+            return reverse.get(current, "Normal")
+        except Exception:
+            return "Normal"
+
     @classmethod
     def generate_3d_shaded_relief_file(
         cls,

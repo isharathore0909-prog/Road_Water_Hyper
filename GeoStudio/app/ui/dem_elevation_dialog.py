@@ -108,6 +108,29 @@ class DEMElevationDialog(QDialog):
         form_topo.addRow("", self.chk_invert)
         form_topo.addRow("", self.chk_bilinear)
 
+        # ── Blend Mode (ArcGIS: Appearance → Layer Blend) ──────────────────
+        from core.elevation_styler import ElevationStyler
+        self.blend_combo = QComboBox()
+        self.blend_combo.setToolTip(
+            "Layer Blend Mode — how this layer composites over layers beneath it.\n"
+            "Multiply: makes white transparent (ideal for draping hillshade shadow over color ramp).\n"
+            "Screen: makes black transparent (lightens map).\n"
+            "Normal: standard rendering (no blending)."
+        )
+        self.blend_combo.addItem("Normal (no blend)", "Normal")
+        for mode_name in [
+            "Multiply  ⭐ (hillshade over color ramp)",
+            "Screen  ⭐ (light glow effect)",
+            "Overlay", "Hard Light", "Soft Light",
+            "Darken", "Lighten",
+            "Color Dodge", "Color Burn",
+            "Difference", "Exclusion",
+        ]:
+            key = mode_name.split("  ")[0].split(" ⭐")[0].strip()
+            self.blend_combo.addItem(mode_name, key)
+        form_topo.addRow("🎨 Layer Blend Mode:", self.blend_combo)
+
+
         layout_topo.addLayout(form_topo)
         self.tabs.addTab(tab_topo, "🏔 Topographic Color Ramp")
 
@@ -282,6 +305,14 @@ class DEMElevationDialog(QDialog):
             if hasattr(self.map_canvas, 'update_elevation_legend'):
                 self.map_canvas.update_elevation_legend(target_l)
             self.map_canvas.refresh_canvas()
+
+        # Apply blend mode (always — independent of which tab was used)
+        blend_mode_key = self.blend_combo.currentData() if hasattr(self, "blend_combo") else "Normal"
+        if blend_mode_key and blend_mode_key != "Normal":
+            apply_target = target_l if (success and hasattr(success, "isValid")) else layer
+            ElevationStyler.apply_blend_mode(apply_target, blend_mode_key)
+            if self.map_canvas:
+                self.map_canvas.refresh_canvas()
 
     def _on_ok(self):
         self.apply_style()

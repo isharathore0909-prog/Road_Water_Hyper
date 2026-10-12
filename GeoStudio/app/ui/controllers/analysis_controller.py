@@ -190,3 +190,46 @@ class AnalysisControllerMixin:
 
     def run_lidar_auto_classification(self, layer=None):
         LidarControllerHandler.run_auto_classification(self, layer=layer)
+
+    # ── Swipe Compare ──────────────────────────────────────────────────────
+    def open_swipe_compare(self):
+        """Open the interactive Layer Swipe Compare dialog (ArcGIS: Compare → Swipe)."""
+        try:
+            from ui.swipe_compare_dialog import SwipeCompareDialog
+            if hasattr(self, "_swipe_dialog") and self._swipe_dialog and self._swipe_dialog.isVisible():
+                self._swipe_dialog.raise_()
+                self._swipe_dialog.activateWindow()
+                return
+            self._swipe_dialog = SwipeCompareDialog(map_canvas=getattr(self, "map_canvas", None), parent=self)
+            self._swipe_dialog.show()
+        except Exception as e:
+            QMessageBox.critical(self, "Swipe Compare", f"Could not open Swipe Compare: {e}")
+
+    # ── Blend Modes ────────────────────────────────────────────────────────
+    def apply_layer_blend_mode(self, mode_name: str):
+        """Apply a named blend mode to the active raster layer (ArcGIS: Appearance → Layer Blend)."""
+        layer = self.layer_panel.get_active_layer() if hasattr(self, "layer_panel") else None
+        if not layer:
+            from qgis.core import QgsProject, QgsRasterLayer
+            for l in QgsProject.instance().mapLayers().values():
+                if isinstance(l, QgsRasterLayer):
+                    layer = l
+                    break
+        if not layer:
+            QMessageBox.information(self, "Layer Blend Mode", "Please select a raster layer first.")
+            return
+        from core.elevation_styler import ElevationStyler
+        ElevationStyler.apply_blend_mode(layer, mode_name)
+        self.map_canvas.refresh_canvas()
+        if hasattr(self, "geo_status") and self.geo_status:
+            self.geo_status.showMessage(f"Blend Mode: {mode_name}", 2500)
+
+    # ── Transpose Fields ───────────────────────────────────────────────────
+    def open_transpose_fields_dialog(self):
+        """Open the Transpose / Pivot Fields geoprocessing dialog (ArcGIS: Data Management → Transpose Fields)."""
+        try:
+            from ui.transpose_fields_dialog import TransposeFieldsDialog
+            dlg = TransposeFieldsDialog(map_canvas=getattr(self, "map_canvas", None), parent=self)
+            dlg.exec_()
+        except Exception as e:
+            QMessageBox.critical(self, "Transpose Fields", f"Could not open Transpose Fields dialog: {e}")

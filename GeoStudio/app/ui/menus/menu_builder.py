@@ -68,6 +68,8 @@ def build_main_menus(mw):
     m_view.addSeparator()
     m_view.addAction(_act(mw, "Refresh Map Canvas", mw.refresh_canvas, "F5", icon_key="refresh"))
     m_view.addSeparator()
+    m_view.addAction(_act(mw, "Layer Swipe Compare...", mw.open_swipe_compare, "Ctrl+Shift+W", icon_key="swipe"))
+    m_view.addSeparator()
     mw._view_menu = m_view
 
     # ── 4. Layer ──────────────────────────────────────────────
@@ -114,6 +116,8 @@ def build_main_menus(mw):
     m_vector.addSeparator()
     m_vector.addAction(_act(mw, "Open Attribute Table", mw.open_attribute_table, "F6"))
     m_vector.addAction(_act(mw, "Merge Vector Layers...", mw.run_merge, icon_key="merge"))
+    m_vector.addSeparator()
+    m_vector.addAction(_act(mw, "Transpose / Pivot Fields...", mw.open_transpose_fields_dialog, icon_key="transpose"))
 
     # ── 8. Raster ─────────────────────────────────────────────
     m_raster = mb.addMenu("&Raster")
@@ -136,6 +140,24 @@ def build_main_menus(mw):
     m_raster.addAction(_act(mw, "Raster Statistics...", mw.raster_stats))
     m_raster.addAction(_act(mw, "Crop / Clip Raster by Polygon Mask...", mw.open_crop_raster_dialog, icon_key="clip"))
     m_raster.addAction(_act(mw, "Reproject / Warp Raster...", mw.raster_reproject))
+    m_raster.addSeparator()
+    m_raster_blend = m_raster.addMenu("🎨 Layer Blend Mode")
+    from core.elevation_styler import ElevationStyler
+    BLEND_CATEGORIES = [
+        ("Darken Group",  ["Normal", "Multiply", "Darken", "Color Burn"]),
+        ("Lighten Group", ["Screen", "Lighten", "Color Dodge", "Linear Dodge"]),
+        ("Contrast",      ["Overlay", "Hard Light", "Soft Light"]),
+        ("Comparative",   ["Difference", "Exclusion"]),
+    ]
+    for cat_label, modes in BLEND_CATEGORIES:
+        cat_hdr = m_raster_blend.addAction(f"— {cat_label} —")
+        cat_hdr.setEnabled(False)
+        for bmode in modes:
+            m_raster_blend.addAction(
+                _act(mw, bmode,
+                     lambda checked=False, m=bmode: mw.apply_layer_blend_mode(m))
+            )
+        m_raster_blend.addSeparator()
 
     # ── 9. Satellite ──────────────────────────────────────────
     m_sat = mb.addMenu("&Satellite")

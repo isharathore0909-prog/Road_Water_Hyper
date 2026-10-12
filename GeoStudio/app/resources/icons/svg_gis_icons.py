@@ -295,5 +295,47 @@ GIS_SVGS = {
         <svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.36-6.36a2.14 2.14 0 0 0-3-3L6 15Z" fill="#fee2e2"/>
         </svg>
+    """,
+
+    # ── Compare / Visualization Tools ──────────────────────────
+    "swipe": """
+        <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <!-- Left map panel (Layer A - blue) -->
+            <path d="M3 4h8v16H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+            <!-- Right map panel (Layer B - green) -->
+            <path d="M13 4h8a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-8V4z" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+            <!-- Central swipe bar -->
+            <line x1="12" y1="2" x2="12" y2="22" stroke="#1e293b" stroke-width="2"/>
+            <!-- Center handle knob -->
+            <circle cx="12" cy="12" r="3.2" fill="#1e293b" stroke="#ffffff" stroke-width="1.2"/>
+            <!-- Opposing interactive swipe arrows (white) -->
+            <polygon points="9.5,12 11.2,10.2 11.2,13.8" fill="#ffffff"/>
+            <polygon points="14.5,12 12.8,10.2 12.8,13.8" fill="#ffffff"/>
+        </svg>
+    """,
+
+    "blend_mode": """
+        <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <!-- Left circle (cyan/blue) -->
+            <circle cx="9" cy="12" r="6.2" fill="#60a5fa" fill-opacity="0.75" stroke="#2563eb" stroke-width="1.5"/>
+            <!-- Right circle (amber/yellow) -->
+            <circle cx="15" cy="12" r="6.2" fill="#fbbf24" fill-opacity="0.75" stroke="#d97706" stroke-width="1.5"/>
+            <!-- Blended overlapping lens (emerald) -->
+            <path d="M12 7.2 A 6.2 6.2 0 0 1 12 16.8 A 6.2 6.2 0 0 1 12 7.2 Z" fill="#10b981" stroke="#059669" stroke-width="1.2"/>
+        </svg>
+    """,
+
+    "transpose": """
+        <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <!-- Table grid border -->
+            <rect x="3" y="3" width="18" height="18" rx="2" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+            <line x1="3" y1="9" x2="21" y2="9" stroke="#475569" stroke-width="1.2"/>
+            <line x1="9" y1="3" x2="9" y2="21" stroke="#475569" stroke-width="1.2"/>
+            <!-- Transpose curved swap arrow -->
+            <path d="M13 15h5v-5" stroke="#2563eb" stroke-width="1.8"/>
+            <path d="M18 15l-5-5" stroke="#2563eb" stroke-width="1.8"/>
+            <path d="M11 9H6v5" stroke="#16a34a" stroke-width="1.8"/>
+            <path d="M6 9l5 5" stroke="#16a34a" stroke-width="1.8"/>
+        </svg>
     """
 }

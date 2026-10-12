@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QColor
 
 from core.elevation_styler import ElevationStyler, ELEVATION_PRESETS
+from resources.icons.icon_provider import get_icon
 
 
 class LayerContextMenuHandler:
@@ -74,6 +75,32 @@ class LayerContextMenuHandler:
             act_sharp = resamp_menu.addAction("Sharp Pixels (Nearest Neighbor)")
             act_smooth.triggered.connect(lambda: cls.set_pixel_mode(panel, layer, "smooth"))
             act_sharp.triggered.connect(lambda: cls.set_pixel_mode(panel, layer, "sharp"))
+
+            # ── Blend Modes (ArcGIS: Appearance → Effects → Layer Blend) ──
+            blend_menu = menu.addMenu(get_icon("blend_mode"), "Layer Blend Mode")
+            current_blend = ElevationStyler.get_layer_blend_mode_name(layer)
+            BLEND_CATEGORIES = [
+                ("Darken Group",  ["Normal", "Multiply", "Darken", "Color Burn"]),
+                ("Lighten Group", ["Screen", "Lighten", "Color Dodge", "Linear Dodge"]),
+                ("Contrast",      ["Overlay", "Hard Light", "Soft Light"]),
+                ("Comparative",   ["Difference", "Exclusion"]),
+            ]
+            for cat_label, modes in BLEND_CATEGORIES:
+                cat_header = blend_menu.addAction(f"— {cat_label} —")
+                cat_header.setEnabled(False)
+                for bmode in modes:
+                    bact = blend_menu.addAction(bmode)
+                    if bmode == current_blend:
+                        bact.setText(f"✓ {bmode}")
+                    bact.triggered.connect(
+                        lambda checked=False, m=bmode: cls.apply_blend_mode(panel, layer, m)
+                    )
+                blend_menu.addSeparator()
+
+            # ── Swipe Compare ──
+            menu.addSeparator()
+            act_swipe = menu.addAction(get_icon("swipe"), "Swipe Compare...")
+            act_swipe.triggered.connect(lambda: cls.open_swipe_compare(panel, layer))
 
         if is_vector:
             act_table = menu.addAction("📋  Open Attribute Table")
@@ -283,3 +310,34 @@ class LayerContextMenuHandler:
                 import shutil
                 shutil.copy(layer.source(), path)
                 QMessageBox.information(panel, "Exported", f"Successfully exported to:\n{path}")
+
+    # ── Blend Mode ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def apply_blend_mode(panel, layer, mode_name: str):
+        """Apply a named blend mode to the layer (ArcGIS: Appearance → Layer Blend)."""
+        if not layer:
+            return
+        from core.elevation_styler import ElevationStyler
+        ElevationStyler.apply_blend_mode(layer, mode_name)
+        if hasattr(panel, "map_canvas") and panel.map_canvas:
+            panel.map_canvas.refresh_canvas()
+
+    # ── Swipe Compare ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def open_swipe_compare(panel, layer=None):
+        """Open the Swipe Compare dialog (ArcGIS: Compare group → Swipe)."""
+        try:
+            from ui.swipe_compare_dialog import SwipeCompareDialog
+            canvas = getattr(panel, "map_canvas", None)
+            dlg = SwipeCompareDialog(map_canvas=canvas, parent=panel)
+            panel._swipe_dialog = dlg
+            # Pre-select the right-clicked layer
+            if layer:
+                idx = dlg.layer_a_combo.findText(layer.name())
+                if idx >= 0:
+                    dlg.layer_a_combo.setCurrentIndex(idx)
+            dlg.show()
+        except Exception as e:
+            QMessageBox.critical(panel, "Swipe Compare", f"Could not open Swipe Compare: {e}")
