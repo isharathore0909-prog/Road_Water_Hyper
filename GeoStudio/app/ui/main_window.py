@@ -9,12 +9,12 @@ import os
 from PyQt5.QtWidgets import QMainWindow, QDockWidget
 from PyQt5.QtCore import Qt
 
-from .map_canvas_widget import MapCanvasWidget
-from .layer_panel import LayerPanelWidget
-from .attribute_table_dock import AttributeTableDock
-from .processing_dock import ProcessingDock
-from .python_console_dock import PythonConsoleDock
-from .status_bar import GeoStatusBar
+from .canvas.map_canvas_widget import MapCanvasWidget
+from .docks.layer_panel import LayerPanelWidget
+from .docks.attribute_table_dock import AttributeTableDock
+from .docks.processing_dock import ProcessingDock
+from .docks.python_console_dock import PythonConsoleDock
+from .docks.status_bar import GeoStatusBar
 from .menus.menu_builder import build_main_menus
 from .toolbars import (
     ProjectToolBar, NavToolBar, DataSourcesToolBar, SelectionToolBar,
@@ -135,7 +135,7 @@ class GeoStudioMainWindow(
     def _connect_signals(self):
         self.layer_panel.active_layer_changed.connect(self._on_active_layer_changed)
         try:
-            from core.raster_optimizer import get_raster_optimizer
+            from core.raster.raster_optimizer import get_raster_optimizer
             get_raster_optimizer().status_message.connect(self.geo_status.showMessage)
         except Exception:
             pass

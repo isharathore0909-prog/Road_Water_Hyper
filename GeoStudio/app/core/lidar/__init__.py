@@ -11,7 +11,7 @@ from .point_cloud_rasterizer import PointCloudRasterizer
 from .powerline_classifier import PowerlineClassifier
 from .vegetation_clearance_engine import VegetationClearanceEngine
 from .building_roof_engine import BuildingRoofEngine
-from .road_extraction_engine import (
+from ..roads import (
     RoadExtractionEngine,
     RoadSurfaceEngine,
     RoadCorridorEngine,

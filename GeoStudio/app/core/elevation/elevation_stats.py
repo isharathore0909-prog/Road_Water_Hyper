@@ -56,7 +56,7 @@ def is_dem_or_elevation(layer: QgsRasterLayer) -> bool:
 
     band_count = layer.bandCount()
     if band_count == 4:
-        return getattr(layer, "_is_3d_relief", False)
+        return bool(layer.customProperty("is_3d_relief") or getattr(layer, "_is_3d_relief", False) or "_3d_relief.tif" in source_lower)
 
     if band_count != 1:
         return False
@@ -190,7 +190,18 @@ def sample_elevation_at_point(layer: QgsRasterLayer, point_xy: QgsPointXY, map_c
         except Exception:
             return None, "m"
 
-    raw_source = getattr(layer, "_raw_dem_source", None)
+    raw_source = layer.customProperty("raw_dem_source") or getattr(layer, "_raw_dem_source", None)
+    if not raw_source and layer.source() and "_3d_relief.tif" in layer.source():
+        try:
+            _chk = gdal.Open(layer.source(), gdal.GA_ReadOnly)
+            if _chk:
+                _meta = _chk.GetMetadataItem("RAW_DEM_SOURCE")
+                if _meta and os.path.isfile(_meta):
+                    raw_source = _meta
+                _chk = None
+        except Exception:
+            pass
+
     if raw_source and os.path.isfile(raw_source):
         try:
             ds = gdal.Open(raw_source, gdal.GA_ReadOnly)

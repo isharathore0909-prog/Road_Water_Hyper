@@ -220,6 +220,10 @@ def generate_3d_shaded_relief_file(
         elif proj_wkt:
             out_ds.SetProjection(proj_wkt)
 
+        out_ds.SetMetadataItem("RAW_DEM_SOURCE", os.path.abspath(source_path))
+        out_ds.SetMetadataItem("IS_3D_RELIEF", "1")
+        out_ds.SetMetadataItem("RELIEF_PRESET", str(preset_key))
+
         out_ds.GetRasterBand(1).WriteArray(r_out)
         out_ds.GetRasterBand(2).WriteArray(g_out)
         out_ds.GetRasterBand(3).WriteArray(b_out)

@@ -34,17 +34,76 @@ class PointCloudReader:
 
     @staticmethod
     def load_dem_points(file_path: str, max_points: int = 8000000):
-        """Extracts high-resolution 3D terrain mesh points directly from any DEM/DSM/DTM GeoTIFF raster."""
+        """
+        Extracts high-resolution 3D terrain mesh points directly from any DEM/DSM/DTM GeoTIFF raster,
+        or handles multi-band 3D relief / RGB rasters seamlessly with true elevation and color draping.
+        """
         from osgeo import gdal
         ds = gdal.Open(file_path, gdal.GA_ReadOnly)
         if not ds:
             raise ValueError(f"Could not open raster file: {file_path}")
 
-        band = ds.GetRasterBand(1)
-        nodata = band.GetNoDataValue()
-        w = ds.RasterXSize
-        h = ds.RasterYSize
-        gt = ds.GetGeoTransform()
+        raster_count = ds.RasterCount
+        first_band = ds.GetRasterBand(1)
+        data_type = first_band.DataType
+
+        # Check if this is an RGB/RGBA textured relief or orthophoto raster (e.g. 3 or 4 bands of Byte data)
+        is_rgb_or_relief = (raster_count >= 3 and data_type == gdal.GDT_Byte) or ("_3d_relief.tif" in file_path.lower())
+
+        # 1. Resolve raw DEM source if this is a shaded relief or RGB textured raster
+        raw_dem_path = None
+        if is_rgb_or_relief:
+            # Check embedded metadata in the GeoTIFF
+            meta_raw = ds.GetMetadataItem("RAW_DEM_SOURCE")
+            if meta_raw and os.path.exists(meta_raw):
+                raw_dem_path = meta_raw
+
+            # Check active QGIS project layers
+            if not raw_dem_path:
+                try:
+                    from qgis.core import QgsProject
+                    for lyr in QgsProject.instance().mapLayers().values():
+                        p = lyr.customProperty("raw_dem_source") or getattr(lyr, "_raw_dem_source", None)
+                        if p and os.path.exists(p):
+                            if os.path.normpath(lyr.source()) == os.path.normpath(file_path) or os.path.basename(file_path).startswith(os.path.splitext(os.path.basename(p))[0]):
+                                raw_dem_path = p
+                                break
+                    if not raw_dem_path:
+                        base_stem = os.path.basename(file_path).split("_3d_relief")[0].split("_GLOBAL_MAPPER")[0].split("_MAGMA")[0].split("_VIRIDIS")[0]
+                        for lyr in QgsProject.instance().mapLayers().values():
+                            if lyr.source() and os.path.exists(lyr.source()) and lyr.source() != file_path:
+                                if base_stem and base_stem.lower() in os.path.basename(lyr.source()).lower():
+                                    raw_dem_path = lyr.source()
+                                    break
+                except Exception:
+                    pass
+
+            # Check if there is an unshaded file in the same directory or parent directory
+            if not raw_dem_path:
+                stem = os.path.splitext(file_path)[0]
+                for sfx in ["_3d_relief", "_relief", "_hillshade"]:
+                    if sfx in stem:
+                        cand = stem.split(sfx)[0] + ".tif"
+                        if os.path.exists(cand):
+                            raw_dem_path = cand
+                            break
+
+        # 2. Determine elevation dataset vs color dataset
+        dem_ds = ds
+        dem_owns_ds = False
+        if raw_dem_path and os.path.exists(raw_dem_path):
+            raw_dem_ds = gdal.Open(raw_dem_path, gdal.GA_ReadOnly)
+            if raw_dem_ds:
+                dem_ds = raw_dem_ds
+                dem_owns_ds = True
+
+        elev_band = dem_ds.GetRasterBand(1)
+        nodata = elev_band.GetNoDataValue()
+        w = dem_ds.RasterXSize
+        h = dem_ds.RasterYSize
+        gt = dem_ds.GetGeoTransform(can_return_null=True) if hasattr(dem_ds, "GetGeoTransform") else dem_ds.GetGeoTransform()
+        if gt is None:
+            gt = (0.0, 1.0, 0.0, float(h), 0.0, -1.0)
 
         total_pts = w * h
         step = max(1, int(math.ceil(math.sqrt(total_pts / max_points))))
@@ -52,8 +111,41 @@ class PointCloudReader:
         out_w = w // step
         out_h = h // step
 
-        elev = band.ReadAsArray(0, 0, w, h, buf_xsize=out_w, buf_ysize=out_h).astype(np.float32)
-        band = None
+        # Read elevation data
+        # If this is an RGB/Byte raster and NO raw DEM was found, do NOT use 0-255 brightness as false elevation!
+        is_pure_rgb_no_dem = (is_rgb_or_relief and not dem_owns_ds and elev_band.DataType == gdal.GDT_Byte)
+
+        if is_pure_rgb_no_dem:
+            # Planar 3D textured drape so it doesn't create corrugated stripes
+            elev = np.zeros((out_h, out_w), dtype=np.float32)
+        else:
+            elev = elev_band.ReadAsArray(0, 0, w, h, buf_xsize=out_w, buf_ysize=out_h).astype(np.float32)
+
+        elev_band = None
+        if dem_owns_ds:
+            dem_ds = None
+
+        # 3. Read RGB color texture if available (e.g. from 3D relief or RGB raster)
+        rgb_tex = None
+        alpha_mask = np.ones((out_h, out_w), dtype=bool)
+        if is_rgb_or_relief or raster_count >= 3:
+            try:
+                b1 = ds.GetRasterBand(1).ReadAsArray(0, 0, ds.RasterXSize, ds.RasterYSize, buf_xsize=out_w, buf_ysize=out_h).astype(np.float32)
+                b2 = ds.GetRasterBand(2).ReadAsArray(0, 0, ds.RasterXSize, ds.RasterYSize, buf_xsize=out_w, buf_ysize=out_h).astype(np.float32)
+                b3 = ds.GetRasterBand(3).ReadAsArray(0, 0, ds.RasterXSize, ds.RasterYSize, buf_xsize=out_w, buf_ysize=out_h).astype(np.float32)
+                
+                if raster_count >= 4:
+                    b4 = ds.GetRasterBand(4).ReadAsArray(0, 0, ds.RasterXSize, ds.RasterYSize, buf_xsize=out_w, buf_ysize=out_h)
+                    alpha_mask = (b4 > 10)
+
+                r_norm = np.clip(b1 / 255.0, 0.0, 1.0)
+                g_norm = np.clip(b2 / 255.0, 0.0, 1.0)
+                b_norm = np.clip(b3 / 255.0, 0.0, 1.0)
+                rgb_tex = np.dstack((r_norm, g_norm, b_norm))
+            except Exception:
+                rgb_tex = None
+                alpha_mask = np.ones((out_h, out_w), dtype=bool)
+
         ds = None
 
         cols = np.arange(out_w)
@@ -65,16 +157,16 @@ class PointCloudReader:
         x_arr = gt[0] + grid_c * res_x
         y_arr = gt[3] + grid_r * res_y
 
-        valid = np.isfinite(elev) & (elev > -10000) & (elev < 50000)
+        valid = np.isfinite(elev) & (elev > -10000) & (elev < 50000) & alpha_mask
         if nodata is not None:
             valid &= (elev != nodata)
+
+        if not np.any(valid):
+            raise ValueError("No valid elevation pixels found in raster.")
 
         x_v = x_arr[valid].astype(np.float64)
         y_v = y_arr[valid].astype(np.float64)
         z_v = elev[valid].astype(np.float32)
-
-        if not np.any(valid):
-            raise ValueError("No valid elevation pixels found in raster.")
 
         z_min = float(np.min(z_v))
         z_max = float(np.max(z_v))
@@ -99,7 +191,20 @@ class PointCloudReader:
         z_norm = np.clip((z_v - z_min) / z_range, 0.0, 1.0)
         z_colors = apply_turbo_colormap(z_norm)
 
-        return (pts_xyz, None, z_colors, None, None, (cx, cy, cz), z_min, z_max, total_pts)
+        # Extract RGB draped colors for the valid points
+        if rgb_tex is not None:
+            rgb_valid = rgb_tex[valid]
+            rgb_colors = np.ascontiguousarray(rgb_valid, dtype=np.float32)
+        else:
+            rgb_colors = None
+
+        color_dict = {
+            "Elevation": z_colors,
+        }
+        if rgb_colors is not None:
+            color_dict["RGB"] = rgb_colors
+
+        return (pts_xyz, rgb_colors, z_colors, None, None, (cx, cy, cz), z_min, z_max, total_pts, color_dict)
 
     @staticmethod
     def load_ascii_ply_points(file_path: str, max_points: int = 8000000):

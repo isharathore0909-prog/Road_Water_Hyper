@@ -25,7 +25,7 @@ class AnalysisControllerMixin:
         if hasattr(self, "layer_panel") and hasattr(self.layer_panel, "apply_elevation_preset"):
             self.layer_panel.apply_elevation_preset(layer, preset_key)
         else:
-            from ui.layer_context_menu import LayerContextMenuHandler
+            from ui.layers.layer_context_menu import LayerContextMenuHandler
             LayerContextMenuHandler.apply_elevation_preset(getattr(self, "layer_panel", None), layer, preset_key)
         if hasattr(self, "geo_status") and self.geo_status:
             self.geo_status.showMessage(f"Applied terrain shader: {preset_key}", 2500)
@@ -33,7 +33,7 @@ class AnalysisControllerMixin:
     def open_dem_elevation_dialog(self, layer=None):
         target = layer or (self.layer_panel.get_active_layer() if hasattr(self, "layer_panel") else None)
         try:
-            from ui.dem_elevation_dialog import DEMElevationDialog
+            from ui.dialogs.dem_elevation_dialog import DEMElevationDialog
             dlg = DEMElevationDialog(map_canvas=getattr(self, "map_canvas", None), target_layer=target, parent=self)
             dlg.exec_()
         except Exception as e:
@@ -52,7 +52,7 @@ class AnalysisControllerMixin:
     def open_volumetric_analysis(self, layer=None):
         target = layer or self.layer_panel.get_active_layer()
         try:
-            from ui.volumetric_dialog import VolumetricAnalysisDialog
+            from ui.dialogs.volumetric_dialog import VolumetricAnalysisDialog
             dlg = VolumetricAnalysisDialog(map_canvas=self.map_canvas, target_layer=target, parent=self)
             dlg.exec_()
         except Exception as e:
@@ -61,7 +61,7 @@ class AnalysisControllerMixin:
     def open_cut_fill(self, layer=None):
         target = layer or self.layer_panel.get_active_layer()
         try:
-            from ui.cut_fill_dialog import CutFillDialog
+            from ui.dialogs.cut_fill_dialog import CutFillDialog
             dlg = CutFillDialog(map_canvas=self.map_canvas, target_layer=target, parent=self)
             dlg.exec_()
         except Exception as e:
@@ -97,7 +97,7 @@ class AnalysisControllerMixin:
     def open_road_condition_dialog(self):      self.processing_dock.open_algorithm("lidar:road_condition")
 
     def open_elevation_profile(self):
-        from ui.elevation_profile_dialog import ElevationProfileDialog
+        from ui.dialogs.elevation_profile_dialog import ElevationProfileDialog
         if not hasattr(self, "_elev_profile_dialog") or self._elev_profile_dialog is None:
             self._elev_profile_dialog = ElevationProfileDialog(self)
         self._elev_profile_dialog.show()
@@ -105,12 +105,12 @@ class AnalysisControllerMixin:
         self._elev_profile_dialog.activateWindow()
 
     def open_crop_raster_dialog(self):
-        from ui.crop_raster_dialog import CropRasterDialog
+        from ui.dialogs.crop_raster_dialog import CropRasterDialog
         dlg = CropRasterDialog(self)
         dlg.exec_()
 
     def open_3d_viewer(self, target_layer=None):
-        from ui.viewer_3d import GeoStudio3DViewerWindow
+        from ui.viewer3d import GeoStudio3DViewerWindow
         from qgis.core import QgsProject, QgsMapLayer
 
         def _is_pc_layer(lyr):
@@ -140,7 +140,22 @@ class AnalysisControllerMixin:
                     layer = active
 
         if layer:
-            src = layer.customProperty("original_las_path") or (layer.source() if hasattr(layer, "source") else None)
+            raw_src = layer.customProperty("raw_dem_source") or getattr(layer, "_raw_dem_source", None)
+            if not raw_src and layer.source() and "_3d_relief.tif" in layer.source():
+                try:
+                    from osgeo import gdal
+                    chk = gdal.Open(layer.source(), gdal.GA_ReadOnly)
+                    if chk:
+                        raw_meta = chk.GetMetadataItem("RAW_DEM_SOURCE")
+                        if raw_meta and os.path.isfile(raw_meta):
+                            raw_src = raw_meta
+                        chk = None
+                except Exception:
+                    pass
+
+            src = raw_src if (raw_src and os.path.exists(raw_src)) else (
+                layer.customProperty("original_las_path") or (layer.source() if hasattr(layer, "source") else None)
+            )
             if src and "_surface.tif" in src:
                 for cand in [src.replace("_surface.tif", ".las"), src.replace("_surface.tif", ".laz"), src.replace("_surface.tif", ".copc.laz")]:
                     if os.path.exists(cand):
@@ -195,7 +210,7 @@ class AnalysisControllerMixin:
     def open_swipe_compare(self):
         """Open the interactive Layer Swipe Compare dialog (ArcGIS: Compare → Swipe)."""
         try:
-            from ui.swipe_compare_dialog import SwipeCompareDialog
+            from ui.dialogs.swipe_compare_dialog import SwipeCompareDialog
             if hasattr(self, "_swipe_dialog") and self._swipe_dialog and self._swipe_dialog.isVisible():
                 self._swipe_dialog.raise_()
                 self._swipe_dialog.activateWindow()
@@ -228,7 +243,7 @@ class AnalysisControllerMixin:
     def open_transpose_fields_dialog(self):
         """Open the Transpose / Pivot Fields geoprocessing dialog (ArcGIS: Data Management → Transpose Fields)."""
         try:
-            from ui.transpose_fields_dialog import TransposeFieldsDialog
+            from ui.dialogs.transpose_fields_dialog import TransposeFieldsDialog
             dlg = TransposeFieldsDialog(map_canvas=getattr(self, "map_canvas", None), parent=self)
             dlg.exec_()
         except Exception as e:

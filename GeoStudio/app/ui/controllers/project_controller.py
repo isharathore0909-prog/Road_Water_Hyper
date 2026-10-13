@@ -89,7 +89,7 @@ class ProjectControllerMixin:
         self._info("Project Properties dialog.")
 
     def print_map(self):
-        from ui.print_export_dialog import PrintExportDialog
+        from ui.dialogs.print_export_dialog import PrintExportDialog
         dlg = PrintExportDialog(self)
         dlg.exec_()
 

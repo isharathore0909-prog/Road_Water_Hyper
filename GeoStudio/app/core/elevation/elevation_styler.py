@@ -187,7 +187,10 @@ class ElevationStyler:
             cls.apply_elevation_colormap(layer, preset_key=preset_key, band=band)
             return layer
 
-        new_layer._raw_dem_source = source
+        abs_source = os.path.abspath(source)
+        new_layer.setCustomProperty("raw_dem_source", abs_source)
+        new_layer.setCustomProperty("is_3d_relief", True)
+        new_layer._raw_dem_source = abs_source
         new_layer._is_3d_relief = True
         cls.apply_resampling(new_layer, mode="smooth")
 

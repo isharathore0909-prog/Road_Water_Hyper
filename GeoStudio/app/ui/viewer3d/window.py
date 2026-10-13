@@ -23,7 +23,10 @@ class GeoStudio3DViewerWindow(QDialog):
     def __init__(self, parent=None, layer=None, file_path: str = None):
         super().__init__(parent)
         self.layer = layer
-        self.file_path = file_path or (layer.source() if layer else None)
+        raw_dem = (layer.customProperty("raw_dem_source") or getattr(layer, "_raw_dem_source", None)) if layer else None
+        if not file_path:
+            file_path = raw_dem if (raw_dem and os.path.exists(raw_dem)) else (layer.source() if layer else None)
+        self.file_path = file_path
         self.max_points = 6000000
         self.pts_xyz = None
 
